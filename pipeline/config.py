@@ -1,7 +1,6 @@
 """パイプライン全体の設定"""
 
 import re
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -14,15 +13,13 @@ class Config:
     pdf_dir: Path = BASE_DIR / "pdf"
     image_dir: Path = BASE_DIR / "images"
     json_dir: Path = BASE_DIR / "ocr_json"
-    ocr_work_dir: Path = BASE_DIR / "ocr_work"   # NDLOCR-Liteの全出力(xml, txt等)
     output_dir: Path = BASE_DIR / "output_md"
 
     # --- PDF → 画像 ---
     render_dpi: int = 200
 
     # --- NDLOCR-Lite ---
-    ndlocr_src: Path = BASE_DIR / "ndlocr-lite" / "src"
-    ndlocr_python: str = sys.executable          # 別のvenvで動かす場合はそのpythonのパス
+    ndlocr_dir: Path = BASE_DIR / "ndlocr-lite"  # git submodule として配置したNDLOCR-Lite
     ocr_device: str = "cuda"                     # "cuda" または "cpu"
 
     # --- VLM ---
@@ -41,6 +38,10 @@ class Config:
 
     # ページ画像のファイル名: {PDF名}_p0001
     page_name_re: re.Pattern = field(default=re.compile(r"^(?P<doc>.+)_p(?P<page>\d{4})$"))
+
+    @property
+    def ndlocr_script(self) -> Path:
+        return self.ndlocr_dir / "src" / "ocr.py"
 
     @property
     def page_md_dir(self) -> Path:
