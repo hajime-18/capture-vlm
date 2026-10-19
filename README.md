@@ -94,11 +94,11 @@ which python    # .../capture_vlm/venv/bin/python と表示されればOK
 PyTorchとtorchvisionは、必ず **同じCUDAバージョン向けのもの** を同時に入れます。バージョンが食い違うと、torchvisionの読み込み時にエラーになります。
 
 ```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+pip install torch==2.14.1 torchvision==0.29.1 --index-url https://download.pytorch.org/whl/cu126
 python -c "import torch, torchvision; print(torch.__version__, torchvision.__version__, torch.cuda.is_available())"
 ```
 
-両方に `+cu126` が付き、最後が `True` になれば成功です。
+両方に `+cu126` が付き、最後が `True` になれば成功です。上のバージョンは動作確認済みのものです。CUDAのバージョンが異なる環境では、`cu126` の部分を合わせたうえで、[PyTorchの公式サイト](https://pytorch.org/get-started/locally/)で対応する組み合わせを確認してください。
 
 ### 3. その他のライブラリをインストールする
 

@@ -1,9 +1,17 @@
-pypdfium2
-torch
-torchvision
-transformers
-accelerate
-bitsandbytes
-pillow
+# 動作確認済みのバージョン: 括弧内
+# 範囲は「同じメジャーバージョンの中で、確認済み以上」としている
+
+# PDF → 画像
+pypdfium2>=4.30,<5          # (4.30.0)  NDLOCR-Lite側で 4.30.0 に固定されている
+pillow>=12.1,<13            # (12.1.1)  NDLOCR-Lite側で 12.1.1 に固定されている
+
+# VLM
+transformers>=5.20,<6       # (5.20.0)
+accelerate>=1.15,<2         # (1.15.0)
+bitsandbytes>=0.50,<1       # (0.50.2)
+
+# torch と torchvision は環境のCUDAに合わせて先に入れること(README「環境構築」の手順2)
+#   確認済み: torch 2.14.1+cu126 / torchvision 0.29.1+cu126
+
 # NDLOCR-Liteの依存ライブラリは別途インストールする:
 #   pip install -r ndlocr-lite/requirements.txt
