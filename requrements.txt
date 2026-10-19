@@ -1,0 +1,9 @@
+pypdfium2
+torch
+torchvision
+transformers
+accelerate
+bitsandbytes
+pillow
+# NDLOCR-Liteの依存ライブラリは別途インストールする:
+#   pip install -r ndlocr-lite/requirements.txt

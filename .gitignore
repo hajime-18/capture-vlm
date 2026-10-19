@@ -1,0 +1,11 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# 入力・中間ファイル・出力(報告書は著作権があるため公開しない)
+pdf/
+images/
+ocr_json/
+output_md/
