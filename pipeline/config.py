@@ -24,7 +24,8 @@ class Config:
 
     # --- VLM ---
     model_id: str = "Qwen/Qwen3.5-9B"             # 32GB級のGPUが空いていれば "Qwen/Qwen3.8-27B"
-    max_new_tokens: int = 8192
+    max_new_tokens: int = 8192                   # 1ページあたりの最大出力トークン数
+    repetition_penalty: float = 1.0              # 同じ行の繰り返しが起きる場合は 1.05 程度にする
     max_image_pixels: int = 1_600_000            # VLMに渡す画像の最大画素数(A4で約145dpi相当)
     attn_implementation: str = "sdpa"            # メモリ効率の良いattention
     quantization: str | None = "4bit"            # "4bit" / "8bit" / None(量子化なし)

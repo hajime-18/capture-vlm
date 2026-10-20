@@ -2,12 +2,20 @@
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from .base import Step
 from .config import Config
 from .prompt import build_prompt
 from .target import TargetDocuments
+
+
+@dataclass
+class GenerationResult:
+    text: str
+    num_tokens: int      # 生成したトークン数
+    truncated: bool      # 上限に達して途中で打ち切られたか
 
 
 class QwenVlmClient:
@@ -23,6 +31,7 @@ class QwenVlmClient:
 
         self._torch = torch
         self.max_new_tokens = config.max_new_tokens
+        self.repetition_penalty = config.repetition_penalty
         self.max_image_pixels = config.max_image_pixels
         if not torch.cuda.is_available():
             raise RuntimeError("CUDAが使えません。torchのインストールを確認してください")
@@ -37,6 +46,17 @@ class QwenVlmClient:
             quantization_config=self._quantization_config(config.quantization),
             attn_implementation=config.attn_implementation,
         ).eval()
+        self.context_length = self._context_length()
+        print(f"  コンテキスト長: {self.context_length or '不明'} / 最大出力: {self.max_new_tokens} トークン")
+
+    def _context_length(self) -> int | None:
+        """モデルが扱える最大トークン数(入力+出力)を設定ファイルから読む"""
+        cfg = self.model.config
+        for c in (getattr(cfg, "text_config", None), cfg):
+            n = getattr(c, "max_position_embeddings", None) if c is not None else None
+            if n:
+                return int(n)
+        return None
 
     def _compute_dtype(self):
         """bf16はAmpere(計算能力8.0)以降のみ高速。それより古いGPU(Pascal, Volta等)ではfp16を使う"""
@@ -90,7 +110,7 @@ class QwenVlmClient:
             img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
         return img
 
-    def generate(self, image_path: Path, prompt: str) -> str:
+    def generate(self, image_path: Path, prompt: str) -> GenerationResult:
         image = self._load_image(image_path)
         messages = [{"role": "user", "content": [
             {"type": "image", "image": image},
@@ -101,16 +121,42 @@ class QwenVlmClient:
             return_dict=True, return_tensors="pt",
             enable_thinking=False,  # 思考過程を出力させない
         ).to(self.model.device)
-        print(f"    画像 {image.size[0]}x{image.size[1]}px / 入力 {inputs['input_ids'].shape[-1]} トークン")
+        input_len = inputs["input_ids"].shape[-1]
+        max_new = self._allowed_new_tokens(input_len)
+        print(f"    画像 {image.size[0]}x{image.size[1]}px / 入力 {input_len} トークン")
         try:
             with self._torch.inference_mode():
-                ids = self.model.generate(**inputs, max_new_tokens=self.max_new_tokens,
-                                          do_sample=False)  # 再現性のため貪欲法
-            new_tokens = ids[0][inputs["input_ids"].shape[-1]:]
-            return self.processor.decode(new_tokens, skip_special_tokens=True)
+                ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=max_new,
+                    do_sample=False,  # 再現性のため貪欲法
+                    repetition_penalty=self.repetition_penalty,
+                )
+            new_tokens = ids[0][input_len:]
+            n = len(new_tokens)
+            ended = n > 0 and new_tokens[-1].item() in self._eos_ids()
+            return GenerationResult(
+                text=self.processor.decode(new_tokens, skip_special_tokens=True),
+                num_tokens=n,
+                truncated=(n >= max_new and not ended),
+            )
         finally:
             if self._torch.cuda.is_available():
                 self._torch.cuda.empty_cache()
+
+
+    def _allowed_new_tokens(self, input_len: int) -> int:
+        """入力と出力の合計がコンテキスト長を超えないようにする"""
+        if self.context_length is None:
+            return self.max_new_tokens
+        room = self.context_length - input_len
+        if room < self.max_new_tokens:
+            print(f"    [注意] コンテキスト長の残りが {room} トークンのため、出力上限を下げます")
+        return max(1, min(self.max_new_tokens, room))
+
+    def _eos_ids(self) -> set[int]:
+        eos = self.model.generation_config.eos_token_id
+        return set(eos) if isinstance(eos, (list, tuple)) else {eos}
 
 
 class MarkdownCleaner:
@@ -144,8 +190,14 @@ class VlmMarkdownConverter(Step):
             self.log(f"[{i}/{len(tasks)}] {img.name}")
             try:
                 ocr_text = json.dumps(json.loads(js.read_text(encoding="utf-8")), ensure_ascii=False)
-                raw = client.generate(img, build_prompt(ocr_text))
-                out.write_text(self.cleaner.clean(raw), encoding="utf-8")
+                result = client.generate(img, build_prompt(ocr_text))
+                md = self.cleaner.clean(result.text)
+                self.log(f"  出力 {result.num_tokens} トークン")
+                if result.truncated:
+                    self.log("  [警告] 出力が上限に達して途中で打ち切られました"
+                             "(config.py の max_new_tokens を増やすか、繰り返しが起きていないか確認してください)")
+                    md += "\n<!-- warning: output truncated -->\n"  # 後から検索できるよう印を残す
+                out.write_text(md, encoding="utf-8")
             except Exception as e:
                 self.log(f"  [エラー] {e}")
 

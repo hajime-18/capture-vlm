@@ -187,6 +187,7 @@ CUDA_VISIBLE_DEVICES=1 python main.py --pdf arcou_vlm_test --only vlm merge --ov
 | `quantization` | `"4bit"` | `"4bit"` / `"8bit"` / `None`(量子化なし)から選びます。 |
 | `max_image_pixels` | `1_600_000` | VLMに渡す画像の最大画素数です。超える画像は縮小して渡します。 |
 | `max_new_tokens` | `8192` | 1ページあたりの最大出力トークン数です。 |
+| `repetition_penalty` | `1.0` | 同じ行が繰り返し出力される場合は `1.05` 程度にします。 |
 | `gpu_memory_limit_gib` | `14.0` | GPU1枚あたりに載せるモデルの上限です。 |
 | `gpu_reserve_gib` | `2.0` | 推論時の作業領域として各GPUに残す量です。 |
 | `min_gpu_free_gib` | `6.0` | 空きがこれ未満のGPUは使いません。 |
