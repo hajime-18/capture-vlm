@@ -1,4 +1,7 @@
-"""[1] PDF → ページ画像 (pypdfium2)"""
+"""[1] PDF → ページ画像 (pypdfium2)
+
+ここで作る画像はVLMへの入力専用。OCRはPDFから直接行う(ocr_runner.py)。
+"""
 
 import pypdfium2 as pdfium
 
@@ -6,7 +9,7 @@ from .base import Step
 
 
 class PdfToImageConverter(Step):
-    name = "PDF → 画像"
+    name = "PDF → 画像(VLM用)"
 
     def run(self) -> None:
         pdfs = self.targets.pdfs

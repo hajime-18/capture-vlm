@@ -15,11 +15,12 @@ class Config:
     json_dir: Path = BASE_DIR / "ocr_json"
     output_dir: Path = BASE_DIR / "output_md"
 
-    # --- PDF → 画像 ---
+    # --- PDF → 画像(VLM入力専用) ---
     render_dpi: int = 200
 
     # --- NDLOCR-Lite ---
     ndlocr_dir: Path = BASE_DIR / "ndlocr-lite"  # git submodule として配置したNDLOCR-Lite
+    ocr_pdf_dpi: int = 200                       # NDLOCR-LiteがPDFを読み取るときの解像度
     ocr_device: str = "cuda"                     # "cuda" または "cpu"
 
     # --- VLM ---

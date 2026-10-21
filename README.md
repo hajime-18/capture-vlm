@@ -1,22 +1,24 @@
 # capture_vlm
 
-発掘調査報告書のPDFを、データベース化しやすいMarkdownに変換するパイプラインです。PDFをページ画像にし、NDLOCR-Liteで文字を読み取ったうえで、ページ画像とOCR結果をVLM(Qwen)に渡してMarkdownを生成します。
+発掘調査報告書のPDFを、データベース化しやすいMarkdownに変換するパイプラインです。NDLOCR-LiteでPDFから文字を読み取り、そのOCR結果とページ画像をVLM(Qwen)に渡してMarkdownを生成します。
 
 ```
-pdf/*.pdf
-  │ [1] PDF → 画像 (pypdfium2)
-  ▼
-images/{PDF名}_p0001.png
-  │ [2] OCR (NDLOCR-Lite)
-  ▼
-ocr_json/{PDF名}_p0001.json
-  │ [3] VLM → Markdown (画像 + OCR結果を入力)
-  ▼
-output_md/pages/{PDF名}_p0001.md
-  │ [4] 結合
-  ▼
-output_md/{PDF名}.md
+                   pdf/*.pdf
+          ┌────────────┴────────────┐
+          │ [1] PDF → 画像          │ [2] OCR (NDLOCR-Lite)
+          │     (VLM入力専用)       │     PDFを直接読み取る
+          ▼                         ▼
+images/{PDF名}_p0001.png   ocr_json/{PDF名}_p0001.json
+          └────────────┬────────────┘
+                       │ [3] VLM → Markdown (画像 + OCR結果を入力)
+                       ▼
+          output_md/pages/{PDF名}_p0001.md
+                       │ [4] 結合
+                       ▼
+             output_md/{PDF名}.md
 ```
+
+画像化とOCRはどちらもPDFを入力とし、互いに依存しません。画像はVLMに渡すためだけに作るもので、OCRには使いません。両者はファイル名のページ番号(`_p0001`)で対応づけられます。
 
 各段階とも出力済みのファイルはスキップするため、途中で止まっても再実行すれば続きから処理されます。
 
@@ -39,7 +41,7 @@ capture_vlm/
 │   └── pipeline.py         # 各段階を順に実行する Pipeline
 ├── ndlocr-lite/            # NDLOCR-Lite(git submodule)
 ├── pdf/                    # ★ 処理したいPDFをここに置く
-├── images/                 # (自動作成) ページ画像
+├── images/                 # (自動作成) ページ画像(VLM入力専用)
 ├── ocr_json/               # (自動作成) OCR結果のJSON
 ├── output_md/              # (自動作成) Markdown
 └── venv/
@@ -181,8 +183,9 @@ CUDA_VISIBLE_DEVICES=1 python main.py --pdf arcou_vlm_test --only vlm merge --ov
 
 | 項目 | 初期値 | 説明 |
 |---|---|---|
-| `render_dpi` | `200` | PDFを画像化するときの解像度です。 |
+| `render_dpi` | `200` | VLM用にPDFを画像化するときの解像度です。 |
 | `ndlocr_dir` | `ndlocr-lite` | NDLOCR-Liteを置いた場所です。 |
+| `ocr_pdf_dpi` | `200` | NDLOCR-LiteがPDFを読み取るときの解像度です。 |
 | `model_id` | `Qwen/Qwen3.5-9B` | 使用するVLMです。 |
 | `quantization` | `"4bit"` | `"4bit"` / `"8bit"` / `None`(量子化なし)から選びます。 |
 | `max_image_pixels` | `1_600_000` | VLMに渡す画像の最大画素数です。超える画像は縮小して渡します。 |
@@ -237,12 +240,15 @@ GPUのメモリが足りません。`nvidia-smi` で空いているGPUを確認�
 **`NDLOCR-Liteが見つかりません`**
 submoduleが取得されていません。`git submodule update --init` を実行してください。
 
-**OCRで `JSONが出力されなかった画像` と表示される**
+**`このNDLOCR-LiteはPDFの直接入力に対応していません`**
+submoduleのNDLOCR-Liteが古い版です。PDFの直接入力は1.3.0以降の機能なので、「NDLOCR-Liteのバージョンを変える」の手順で1.3.1以降に切り替えてください。
+
+**OCRで `JSONが出力されなかったページ` と表示される**
 直前に `ocr.py` が出力したエラーを確認してください。`--ocr-device cpu` で改善する場合は、onnxruntime-gpuの環境に問題があります。
 
 ## NDLOCR-Liteのバージョンを変える
 
-submoduleは特定のコミットに固定されています。別のバージョンに変える場合は、次のようにします。
+PDFを直接OCRするため、NDLOCR-Liteは **1.3.0以降** が必要です(動作確認は1.3.1)。submoduleは特定のコミットに固定されています。別のバージョンに変える場合は、次のようにします。
 
 ```bash
 cd ndlocr-lite
