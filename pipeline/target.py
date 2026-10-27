@@ -51,6 +51,25 @@ class TargetDocuments:
         pattern = name if name.lower().endswith(".pdf") else f"{name}.pdf"
         return [p for p in self._all_pdfs() if fnmatch(p.name, pattern)]
 
+    @property
+    def reports(self):
+        """対象のPDFを含む報告書(section モード用)。分割されたPDFは1冊にまとめる"""
+        if not hasattr(self, "_reports"):
+            from .section.report import ReportCatalog
+            catalog = ReportCatalog(self.config, list(dict.fromkeys(self._all_pdfs() + self.pdfs)))
+            self._reports = catalog.reports if self.select_all else catalog.containing(self.pdfs)
+        return self._reports
+
+    def expand_to_reports(self) -> list[str]:
+        """1冊の一部のPDFだけが指定された場合、同じ報告書の残りのPDFも対象に加える。加えたPDF名を返す"""
+        if self.select_all:
+            return []
+        current = {p.stem for p in self.pdfs}
+        added = [pdf for r in self.reports for pdf in r.pdfs if pdf.stem not in current]
+        self.pdfs += added
+        self.doc_names |= {p.stem for p in added}
+        return [p.name for p in added]
+
     def includes(self, page_stem: str) -> bool:
         """ページ画像などのファイル名(拡張子なし)が対象のPDFに属するか"""
         if self.select_all:

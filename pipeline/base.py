@@ -6,6 +6,10 @@ from .config import Config
 from .target import TargetDocuments
 
 
+class PipelineError(Exception):
+    """処理を続けられない状態(利用者への案内メッセージを持つ)"""
+
+
 class Step(ABC):
     """パイプラインの1段階。name と run() を実装する。"""
 

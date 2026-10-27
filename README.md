@@ -2,49 +2,79 @@
 
 発掘調査報告書のPDFを、データベース化しやすいMarkdownに変換するパイプラインです。NDLOCR-LiteでPDFから文字を読み取り、そのOCR結果とページ画像をVLM(Qwen)に渡してMarkdownを生成します。
 
+処理方式は2つあり、`config.py` の `mode` または `--mode` で切り替えます。
+
+| 方式 | 内容 |
+|---|---|
+| `section`(初期値) | 報告書1冊をまとめて扱い、章・節の区切りごとに複数ページをVLMへ入れる。分割されたPDFは1冊にまとめる |
+| `page` | 1ページずつVLMへ入れる |
+
+## 処理の流れ(section モード)
+
 ```
-                   pdf/*.pdf
-          ┌────────────┴────────────┐
-          │ [1] PDF → 画像          │ [2] OCR (NDLOCR-Lite)
-          │     (VLM入力専用)       │     PDFを直接読み取る
-          ▼                         ▼
-images/{PDF名}_p0001.png   ocr_json/{PDF名}_p0001.json
-          └────────────┬────────────┘
-                       │ [3] VLM → Markdown (画像 + OCR結果を入力)
-                       ▼
-          output_md/pages/{PDF名}_p0001.md
-                       │ [4] 結合
-                       ▼
-             output_md/{PDF名}.md
+                       pdf/*.pdf(1冊が複数のPDFに分かれていてもよい)
+              ┌────────────────┴────────────────┐
+              │ [pdf] PDF → 画像                │ [ocr] OCR (NDLOCR-Lite)
+              │       (VLM入力専用)             │       PDFを直接読み取る
+              ▼                                 ▼
+   images/{PDF名}_p0001.png        ocr_json/{PDF名}_p0001.json
+              └────────────────┬────────────────┘
+                               │ [plan] 区切りの判定
+                               │   目次・見出しの書式・柱・LLM を総合して章・節を判定し、
+                               │   VLMに1回で入れる範囲(チャンク)を決めて保存する
+                               ▼
+              chunks/{報告書名}/chunk_0001.json …(+ plan.md で確認)
+                               │ [vlm] すべてのチャンクが揃っていることを確認してから、
+                               │       チャンクごとに画像(複数ページ)+OCR結果をVLMへ
+                               ▼
+              output_md/{報告書名}/chunks/chunk_0001.md …
+                               │ [merge] 結合
+                               ▼
+              output_md/{報告書名}/{報告書名}.md (+ figures/F0001.png …)
 ```
 
-画像化とOCRはどちらもPDFを入力とし、互いに依存しません。画像はVLMに渡すためだけに作るもので、OCRには使いません。両者はファイル名のページ番号(`_p0001`)で対応づけられます。
+page モードでは `plan` が無く、ページごとに `output_md/pages/{PDF名}_p0001.md` を作って `output_md/{PDF名}.md` に結合します。
 
-各段階とも出力済みのファイルはスキップするため、途中で止まっても再実行すれば続きから処理されます。
+各段階とも出力済みのものはスキップするため、途中で止まっても再実行すれば続きから処理されます。
 
 ## ディレクトリ構成
 
 ```
 capture_vlm/
-├── main.py                 # 実行用スクリプト
+├── main.py                     # 実行用スクリプト
 ├── requirements.txt
-├── README.md
 ├── pipeline/
-│   ├── config.py           # 設定(パス・モデル・メモリ上限など)
-│   ├── base.py             # 各段階の基底クラス Step
-│   ├── target.py           # 処理対象PDFの選択 TargetDocuments
-│   ├── pdf_converter.py    # [1] PdfToImageConverter
-│   ├── ocr_runner.py       # [2] NdlOcrRunner
-│   ├── prompt.py           # VLMへの指示文
-│   ├── vlm_converter.py    # [3] QwenVlmClient / MarkdownCleaner / VlmMarkdownConverter
-│   ├── markdown_merger.py  # [4] MarkdownMerger
-│   └── pipeline.py         # 各段階を順に実行する Pipeline
-├── ndlocr-lite/            # NDLOCR-Lite(git submodule)
-├── pdf/                    # ★ 処理したいPDFをここに置く
-├── images/                 # (自動作成) ページ画像(VLM入力専用)
-├── ocr_json/               # (自動作成) OCR結果のJSON
-├── output_md/              # (自動作成) Markdown
-└── venv/
+│   ├── config.py               # 設定(すべての設定項目はここ)
+│   ├── base.py                 # 各段階の基底クラス Step
+│   ├── target.py               # 処理対象PDFの選択
+│   ├── pipeline.py             # 処理方式ごとの段階の並びと実行
+│   ├── pdf_converter.py        # [pdf] PDF → VLM用画像
+│   ├── ocr_runner.py           # [ocr] NDLOCR-Lite の実行と結果の整形
+│   ├── ndl_region_ocr.py       #       柱・ノンブルの文字の読み取り(ocr_runner から呼ぶ)
+│   ├── vlm_converter.py        # [vlm] page モード / VLMクライアント(両モード共通)
+│   ├── markdown_merger.py      # [merge] page モード
+│   ├── prompt.py               # page モードの指示文
+│   └── section/                # section モード
+│       ├── report.py           #   分割されたPDFを1冊にまとめる
+│       ├── ocr_page.py         #   OCR結果(1ページ)の扱い
+│       ├── toc.py              #   目次の読み取り
+│       ├── headings.py         #   見出しの書式による判定
+│       ├── page_map.py         #   印刷ページ番号と通し番号の対応
+│       ├── llm_judge.py        #   LLMによる見出しの判定
+│       ├── analyzer.py         #   上記を総合して見出しを確定
+│       ├── figures.py          #   図の番号付けと切り出し
+│       ├── chunker.py          #   チャンク(VLMに入れる範囲)の決定
+│       ├── planner.py          # [plan]
+│       ├── validator.py        #   チャンクが揃っているかの確認
+│       ├── prompts.py          #   section モードの指示文
+│       ├── vlm.py              # [vlm]
+│       └── merger.py           # [merge]
+├── ndlocr-lite/                # NDLOCR-Lite(git submodule)
+├── pdf/                        # ★ 処理したいPDFをここに置く
+├── images/                     # (自動作成) ページ画像(VLM入力専用)
+├── ocr_json/                   # (自動作成) OCR結果
+├── chunks/                     # (自動作成) 区切りの判定結果
+└── output_md/                  # (自動作成) Markdown
 ```
 
 OCRには国立国会図書館の [NDLOCR-Lite](https://github.com/ndl-lab/ndlocr-lite) を使用しています。NDLOCR-Liteは `ndlocr-lite/` に git submodule として配置し、その `src/ocr.py` をこのプログラムと同じPython(venv)で実行します。
@@ -133,69 +163,161 @@ python -c "import onnxruntime as ort; print(ort.get_available_providers())"
 CUDA_VISIBLE_DEVICES=1 python main.py
 ```
 
+### おすすめの進め方(section モード)
+
+区切りの判定結果を確認してからVLMを回すと、無駄な処理を避けられます。
+
+```bash
+# 1. 画像化・OCR・区切りの判定まで
+CUDA_VISIBLE_DEVICES=1 python main.py --pdf "eriseki_005*" --only pdf ocr plan
+
+# 2. 判定結果を確認する
+less chunks/eriseki_005/plan.md
+
+# 3. VLMでMarkdownにして結合する
+CUDA_VISIBLE_DEVICES=1 python main.py --pdf "eriseki_005*" --only vlm merge
+```
+
+`plan` でLLMを使う設定(`boundary_llm`)のときは、手順1でもGPUを使います。
+
 ### オプション
 
 | オプション | 説明 |
 |---|---|
-| `--pdf NAME ...` | 処理するPDFを指定します。省略すると `pdf/` 内のすべてが対象です。 |
-| `--only STEP ...` | 指定した段階だけ実行します。`pdf` / `ocr` / `vlm` / `merge` から選びます。 |
-| `--overwrite` | 出力済みのファイルも作り直します。 |
+| `--pdf NAME ...` | 処理するPDFを指定します。省略すると `pdf/` 内のすべてが対象です。section モードでは、1冊の一部を指定すると残りのPDFも自動で対象になります。 |
+| `--only STEP ...` | 指定した段階だけ実行します。section: `pdf` `ocr` `plan` `vlm` `merge` / page: `pdf` `ocr` `vlm` `merge` |
+| `--mode {section,page}` | 処理方式です(省略時は `config.py` の `mode`)。 |
+| `--overwrite` | 出力済みのものも作り直します。 |
 | `--ocr-device {cuda,cpu}` | OCRに使うデバイスです(初期値は `cuda`)。 |
 
 ### 実行例
 
 ```bash
 # PDFを指定する(拡張子は省略可、複数指定可)
-python main.py --pdf arcou_vlm_test.pdf
 python main.py --pdf "eriseki_005(1).pdf" 014_001_004
 
 # ワイルドカードでまとめて指定する
 python main.py --pdf "eriseki_005*"
 
-# pdf/ 以外の場所にあるPDFを指定する
-python main.py --pdf ~/Downloads/eriseki_010.pdf
+# 1ページずつ処理する
+python main.py --mode page --pdf arcou_vlm_test
 
-# OCRまでを先に全件済ませ、あとでVLMを回す
-python main.py --only pdf ocr
-CUDA_VISIBLE_DEVICES=1 python main.py --only vlm merge
-
-# 指示文を変えたので、Markdownだけ作り直す
-CUDA_VISIBLE_DEVICES=1 python main.py --pdf arcou_vlm_test --only vlm merge --overwrite
+# 設定を変えたので、区切りの判定からやり直す
+python main.py --pdf "eriseki_005*" --only plan vlm merge --overwrite
 ```
 
 括弧を含むファイル名とワイルドカードは、必ず引用符で囲んでください。囲まないと、シェルが括弧を構文として解釈したり、ワイルドカードを別のディレクトリで展開したりします。
 
-## 出力
+## section モードの詳細
 
-ページごとのMarkdownは `output_md/pages/` に出力されます。PDF1冊分を結合したものは `output_md/{PDF名}.md` です。結合したファイルには、各ページの先頭に次のような印が入ります。
+### 分割されたPDFを1冊にまとめる
+
+ファイル名が次の規則に当てはまるPDFは、同じ報告書として番号順に連結します。規則は `config.py` の `report_patterns` で追加・変更できます(`report` が報告書名、`order` が並び順になる正規表現)。
+
+| ファイル名の例 | 報告書名 | 並び順 |
+|---|---|---|
+| `eriseki_005(1).pdf`, `eriseki_005(2).pdf` | `eriseki_005` | 括弧内の番号 |
+| `014_001_004.pdf`, `014_005_008.pdf` | `014` | 開始ページの番号 |
+
+規則に当てはまらないPDFは、1つのPDFを1冊として扱います。
+
+### 区切りの判定
+
+報告書ごとに書き方が違うため、次の手がかりを点数にして総合的に判定します。
+
+| 手がかり | 内容 |
+|---|---|
+| 目次 | 目次ページから見出しと印刷上のページ番号を読み取り、本文の行と照合する。一致した見出しは確実性が高く、目次での字下げから階層(章・節)も決まる |
+| 書式 | 「第3章」「第2節」「Ⅱ」「1.」「(1)」などの書き方、OCRの種別(見出し)、文字の大きさ、行の長さ、句読点で終わらないこと |
+| 柱 | ページ上部の章題が変わったページは、章の始まりである可能性が高い |
+| LLM | 上の手がかりで判断が分かれる行を、OCRの文字列と文字の大きさからLLMに判定させる(画像は使わない) |
+
+点数が `heading_accept_score` 以上の行を見出しとし、`heading_candidate_score` との間の行は、LLMで確認します。LLMが「見出しだ」と判断しても、長い文や句読点で終わる行は書式の点数が低いため見出しになりません(LLMの誤答だけで区切られないようにするため)。
+
+`boundary_llm` で、LLMの使い方を選べます。
+
+| 値 | 内容 |
+|---|---|
+| `"off"` | LLMを使わない(GPU不要で最も速い) |
+| `"ambiguous"`(初期値) | 判断が分かれる行のあるページ、柱が変わったのに見出しが見つからないページ、目次にあるのに本文で見つからない見出しの付近だけ |
+| `"all"` | 本文のすべてのページ(時間はかかるが、書式が独特な報告書に強い) |
+
+**ノンブル(印刷上のページ番号)について**: NDLOCR-Liteは柱とノンブルの領域を検出しても文字を読まないため、その領域だけをNDLOCR-Liteの文字認識モデルで読み足しています。ただし1桁の数字などは読み誤りが多いため、前後のページと番号が連続しているものだけを使います。ノンブルが使えない場合も、目次の見出しを本文と文字で照合し、そのずれから次の見出しの位置を予想します。
+
+### チャンク(VLMに1回で入れる範囲)の決め方
+
+- `section_level`(初期値 2 = 節)以上の見出しで区切ります。序文・例言・目次・報告書抄録などは、それぞれ独立したチャンクになります。
+- 次の見出しがページの途中にある場合、**そのページは前後両方のチャンクに入れます**(取りこぼし防止)。VLMには「1枚目は○○から」「最後の画像は△△の手前まで」と範囲を指示し、OCR結果も範囲内の行だけを渡すので、同じ文章が二重に出力されることはありません。
+- 図版ページ(図・写真が中心のページ)が `min_plate_run` 枚以上続く部分は、図版だけのチャンクにします。
+- `max_pages_per_chunk` を超える節は、下位の見出し(項など)で分割し、それも無ければページ単位で分割します。分割された後半には「○○(続き)」と表示され、VLMには見出しを繰り返さないよう指示します。
+- 2つ目以降のチャンクには、上位の見出し(例:「第3章 調査の成果 > 第2節 遺物」)を指示文に含め、見出しの階層が揃うようにしています。
+
+### 図の番号
+
+OCRが検出した図・写真に、報告書の中での通し番号(`F0001`, `F0002`, …)を振り、`output_md/{報告書名}/figures/F0001.png` として切り出します。VLMには、元の図があった位置に次のように書かせます。
 
 ```markdown
-<!-- page: 12 -->
-## 第3章 調査の成果
-...
+![第3図 SK01実測図](figures/F0003.png)
 ```
 
-この印はHTMLコメントなのでMarkdownの表示には影響しません。データベースに取り込む際に、記述が何ページのものかを追うために使えます。
+これで、Markdownのどの位置に何の図があったかを、切り出した画像と対応づけて確認できます。VLMが図を書き忘れた場合や、一覧に無いIDを書いた場合は、ログに警告を出し、そのチャンクの末尾に `<!-- warning: missing figures: F0005 -->` のような印を残します。
+
+### 判定結果の確認
+
+`plan` の後、`chunks/{報告書名}/plan.md` に次の内容が書き出されます。VLMを回す前に確認してください。
+
+- チャンクの一覧(ページの範囲、ページ途中の区切りの位置、上位の見出し、図の数)
+- 判定した見出しの一覧(階層、根拠、点数)
+- 本文で位置を特定できなかった目次の項目
+- ページの種類(本文・目次・図版など)
+
+`vlm` は、最初に対象のすべての報告書でチャンクが揃っていること(すべてのページがいずれかのチャンクに含まれること、画像・図の切り出しがあること)を確認し、1つでも欠けていれば処理を始めずに止まります。
+
+### 保存されるデータ
+
+| ファイル | 内容 |
+|---|---|
+| `ocr_json/{PDF名}_p0001.json` | NDLOCR-LiteのJSON(座標・確信度などすべて)に、XMLから行の種別(`type`)・読み順(`order`)・図や表などの領域(`blocks`)、柱・ノンブルの文字を加えたもの |
+| `chunks/{報告書名}/chunk_0001.json` | チャンク1つ分。範囲(`scope`)、上位の見出し(`breadcrumb`)、範囲内の見出しと図、各ページの範囲内の行ID、各ページのOCR結果の全項目 |
+| `chunks/{報告書名}/structure.json` | 判定した見出し、目次の項目と本文での位置、ページの種類など |
+| `chunks/{報告書名}/plan.json` | チャンクの一覧(判定が最後まで終わると書き出される) |
+| `output_md/{報告書名}/chunks/chunk_0001.md` | チャンクごとのMarkdown |
+| `output_md/{報告書名}/{報告書名}.md` | 1冊分のMarkdown。各チャンクの先頭に `<!-- chunk: 0003 \| pages: 5-6 \| 第1節 … -->` の印が入る |
+
+座標や確信度は、後の学習などに使えるよう、OCRの結果からチャンクのJSONまで削らずに保存しています。VLMには、トークン数を抑えるため文字列と種別だけを渡します。
 
 ## 設定
 
-設定はすべて `pipeline/config.py` の `Config` クラスにまとまっています。主な項目は次のとおりです。
+設定はすべて `pipeline/config.py` の `Config` クラスにまとまっています。
 
 | 項目 | 初期値 | 説明 |
 |---|---|---|
-| `render_dpi` | `200` | VLM用にPDFを画像化するときの解像度です。 |
-| `ndlocr_dir` | `ndlocr-lite` | NDLOCR-Liteを置いた場所です。 |
-| `ocr_pdf_dpi` | `200` | NDLOCR-LiteがPDFを読み取るときの解像度です。 |
-| `model_id` | `Qwen/Qwen3.5-9B` | 使用するVLMです。 |
-| `quantization` | `"4bit"` | `"4bit"` / `"8bit"` / `None`(量子化なし)から選びます。 |
-| `max_image_pixels` | `1_600_000` | VLMに渡す画像の最大画素数です。超える画像は縮小して渡します。 |
-| `max_new_tokens` | `8192` | 1ページあたりの最大出力トークン数です。 |
-| `repetition_penalty` | `1.0` | 同じ行が繰り返し出力される場合は `1.05` 程度にします。 |
-| `gpu_memory_limit_gib` | `14.0` | GPU1枚あたりに載せるモデルの上限です。 |
-| `gpu_reserve_gib` | `2.0` | 推論時の作業領域として各GPUに残す量です。 |
-| `min_gpu_free_gib` | `6.0` | 空きがこれ未満のGPUは使いません。 |
+| `mode` | `"section"` | 処理方式(`"section"` / `"page"`) |
+| `render_dpi` | `200` | VLM用にPDFを画像化するときの解像度 |
+| `ndlocr_dir` | `ndlocr-lite` | NDLOCR-Liteを置いた場所 |
+| `ocr_pdf_dpi` | `200` | NDLOCR-LiteがPDFを読み取るときの解像度 |
+| `model_id` | `Qwen/Qwen3.5-9B` | 使用するVLM(区切りの判定のLLMも同じモデル) |
+| `quantization` | `"4bit"` | `"4bit"` / `"8bit"` / `None`(量子化なし) |
+| `max_new_tokens` | `8192` | 1回(1ページまたは1チャンク)あたりの最大出力トークン数 |
+| `repetition_penalty` | `1.0` | 同じ行が繰り返し出力される場合は `1.05` 程度にする |
+| `max_image_pixels` | `1_600_000` | page モードでVLMに渡す画像の最大画素数 |
+| `section_max_image_pixels` | `1_200_000` | section モードでの1枚あたりの最大画素数(複数ページを入れるため小さめ) |
+| `section_level` | `2` | 区切る見出しの階層(1=章, 2=節) |
+| `max_pages_per_chunk` | `3` | 1回にVLMへ入れる最大ページ数(重複ページを含む) |
+| `min_plate_run` | `2` | 図版ページがこの枚数以上続けば図版だけでまとめる |
+| `boundary_llm` | `"ambiguous"` | 区切りの判定でのLLMの使い方(`"off"` / `"ambiguous"` / `"all"`) |
+| `heading_accept_score` | `4.0` | 見出しと認める点数 |
+| `heading_candidate_score` | `2.0` | LLMで確認する候補の点数 |
+| `report_patterns` | (上記) | 分割されたPDFを1冊にまとめるファイル名の規則 |
+| `gpu_memory_limit_gib` | `14.0` | GPU1枚あたりに載せるモデルの上限 |
+| `gpu_reserve_gib` | `2.0` | 推論時の作業領域として各GPUに残す量 |
+| `min_gpu_free_gib` | `6.0` | 空きがこれ未満のGPUは使わない |
 
-VLMへの指示文は `pipeline/prompt.py` で変更できます。
+VLMへの指示文は、section モードは `pipeline/section/prompts.py`、page モードは `pipeline/prompt.py` で変更できます。
+
+### 1回に入れるページ数の決め方
+
+`max_pages_per_chunk` は、GPUのメモリに合わせて実測で決めてください。まず `3` で処理し、VLMの段階でOOMが出るなら `2` に下げるか `section_max_image_pixels` を小さくします。ログに表示される「画像の枚数 / 入力トークン数」が目安になります。32GBのGPUが使える場合は、`4`〜`5` に増やすと、節の途中での分割が減ります。
 
 ### モデルの選び方
 
@@ -222,29 +344,26 @@ torchとtorchvisionのCUDAバージョンが食い違っています。「環境
 **`The NVIDIA driver on your system is too old`**
 PyTorchのCUDAバージョンがドライバより新しすぎます。cu126版のPyTorchを入れ直してください。
 
-**`Qwen3VLVideoProcessor requires the Torchvision library`**
-torchvisionが入っていません。手順2を実行してください。
-
-**モデル読み込み中に `CUDA out of memory`**
+**モデル読み込み中に `CUDA out of memory` / `Some modules are dispatched on the CPU or the disk`**
 GPUのメモリが足りません。`nvidia-smi` で空いているGPUを確認し、`CUDA_VISIBLE_DEVICES` で指定してください。それでも足りない場合は、`quantization` を `"4bit"` にするか、より小さいモデルに切り替えてください。
 
-**`Some modules are dispatched on the CPU or the disk`**
-量子化したモデルがGPUに収まり切っていません。上と同じ対処をしてください。
+**推論中に `CUDA out of memory`**
+入力が大きすぎます。section モードでは `max_pages_per_chunk` か `section_max_image_pixels` を、page モードでは `max_image_pixels` を下げてください。
 
-**推論中(`[1/1] ...` の後)に `CUDA out of memory`**
-画像が大きすぎます。`max_image_pixels` を `1_000_000` 程度に下げてください。処理中に表示される「画像サイズ / 入力トークン数」が目安になります。
+**`チャンクが揃っていないため、VLMの処理を始められません`**
+表示された報告書について `python main.py --only plan` を実行してください。`ページ数が判定時と違います` と出る場合は、PDFを差し替えた可能性があるので `--only pdf ocr plan --overwrite` でやり直してください。
+
+**`plan` で `画像またはOCR結果が揃っていません`**
+`--only pdf ocr` を先に実行してください。以前の版で作ったOCR結果は形式が古いため、`ocr` の段階で自動的に作り直されます。
+
+**区切りがおかしい**
+`chunks/{報告書名}/plan.md` の「見出し」の表で、根拠と点数を確認してください。見出しの取りこぼしが多い場合は `boundary_llm` を `"all"` に、本文の箇条書きが見出しと判定される場合は `heading_accept_score` を上げてから、`--only plan --overwrite` でやり直します。
+
+**`このNDLOCR-LiteはPDFの直接入力に対応していません`**
+submoduleのNDLOCR-Liteが古い版です。「NDLOCR-Liteのバージョンを変える」の手順で1.3.1以降に切り替えてください。
 
 **`PDFが見つかりません`**
 `--pdf` で指定した名前が見つかりません。表示される `pdf/` 内の一覧と見比べてください。括弧を含む名前は引用符で囲む必要があります。
-
-**`NDLOCR-Liteが見つかりません`**
-submoduleが取得されていません。`git submodule update --init` を実行してください。
-
-**`このNDLOCR-LiteはPDFの直接入力に対応していません`**
-submoduleのNDLOCR-Liteが古い版です。PDFの直接入力は1.3.0以降の機能なので、「NDLOCR-Liteのバージョンを変える」の手順で1.3.1以降に切り替えてください。
-
-**OCRで `JSONが出力されなかったページ` と表示される**
-直前に `ocr.py` が出力したエラーを確認してください。`--ocr-device cpu` で改善する場合は、onnxruntime-gpuの環境に問題があります。
 
 ## NDLOCR-Liteのバージョンを変える
 
@@ -266,7 +385,7 @@ OCRには国立国会図書館の [NDLOCR-Lite](https://github.com/ndl-lab/ndloc
 
 ## 処理段階を追加するには
 
-`pipeline/base.py` の `Step` を継承したクラスを作り、`pipeline/pipeline.py` の `Pipeline.STEP_CLASSES` に登録します。
+`pipeline/base.py` の `Step` を継承したクラスを作り、`pipeline/pipeline.py` の `MODES` の該当する処理方式に登録します。登録した名前は、自動的に `--only` の選択肢にも追加されます。
 
 ```python
 from .base import Step
@@ -275,11 +394,7 @@ class DatabaseImporter(Step):
     name = "データベース登録"
 
     def run(self) -> None:
-        for md in sorted(self.config.output_dir.glob("*.md")):
-            # --pdf の指定に従う
-            if not (self.targets.select_all or md.stem in self.targets.doc_names):
-                continue
+        for report in self.targets.reports:      # section モードでは報告書単位で扱える
+            md = self.config.output_dir / report.name / f"{report.name}.md"
             ...
 ```
-
-登録したキーは、自動的に `--only` の選択肢にも追加されます。

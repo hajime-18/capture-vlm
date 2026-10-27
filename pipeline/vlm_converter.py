@@ -1,4 +1,4 @@
-"""[3] ページ画像 + OCR JSON → Markdown (Qwen3.8)"""
+"""[3] ページ画像 + OCR JSON → Markdown (page モード)。VLMクライアントは section モードとも共有する"""
 
 import json
 import re
@@ -100,30 +100,33 @@ class QwenVlmClient:
             return BitsAndBytesConfig(load_in_8bit=True, llm_int8_skip_modules=skip)
         raise ValueError(f"未対応の量子化指定です: {mode}")
 
-    def _load_image(self, image_path: Path):
+    def _load_image(self, image_path: Path, max_pixels: int | None = None):
         """画素数が上限を超える画像は縮小する(画像トークンが増えすぎるとOOMになるため)"""
         from PIL import Image
+        limit = max_pixels or self.max_image_pixels
         img = Image.open(image_path).convert("RGB")
         w, h = img.size
-        if w * h > self.max_image_pixels:
-            scale = (self.max_image_pixels / (w * h)) ** 0.5
+        if w * h > limit:
+            scale = (limit / (w * h)) ** 0.5
             img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
         return img
 
-    def generate(self, image_path: Path, prompt: str) -> GenerationResult:
-        image = self._load_image(image_path)
-        messages = [{"role": "user", "content": [
-            {"type": "image", "image": image},
-            {"type": "text", "text": prompt},
-        ]}]
+    def generate(self, images: Path | list[Path], prompt: str, max_pixels: int | None = None,
+                 max_new_tokens: int | None = None, quiet: bool = False) -> GenerationResult:
+        """画像(0枚以上)と指示文から生成する。画像は指示文より前に、渡した順で並べる"""
+        paths = [images] if isinstance(images, Path) else list(images)
+        loaded = [self._load_image(p, max_pixels) for p in paths]
+        content = [{"type": "image", "image": img} for img in loaded] + [{"type": "text", "text": prompt}]
         inputs = self.processor.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=True,
+            [{"role": "user", "content": content}], add_generation_prompt=True, tokenize=True,
             return_dict=True, return_tensors="pt",
             enable_thinking=False,  # 思考過程を出力させない
         ).to(self.model.device)
         input_len = inputs["input_ids"].shape[-1]
-        max_new = self._allowed_new_tokens(input_len)
-        print(f"    画像 {image.size[0]}x{image.size[1]}px / 入力 {input_len} トークン")
+        max_new = self._allowed_new_tokens(input_len, max_new_tokens or self.max_new_tokens)
+        if not quiet:
+            sizes = ", ".join(f"{i.size[0]}x{i.size[1]}" for i in loaded) or "なし"
+            print(f"    画像 {len(loaded)}枚 ({sizes}px) / 入力 {input_len} トークン")
         try:
             with self._torch.inference_mode():
                 ids = self.model.generate(
@@ -144,19 +147,33 @@ class QwenVlmClient:
             if self._torch.cuda.is_available():
                 self._torch.cuda.empty_cache()
 
+    def generate_text(self, prompt: str, max_new_tokens: int) -> str:
+        """画像を使わない生成(区切りの判定で使う)"""
+        return self.generate([], prompt, max_new_tokens=max_new_tokens, quiet=True).text
 
-    def _allowed_new_tokens(self, input_len: int) -> int:
+    def _allowed_new_tokens(self, input_len: int, wanted: int) -> int:
         """入力と出力の合計がコンテキスト長を超えないようにする"""
         if self.context_length is None:
-            return self.max_new_tokens
+            return wanted
         room = self.context_length - input_len
-        if room < self.max_new_tokens:
+        if room < wanted:
             print(f"    [注意] コンテキスト長の残りが {room} トークンのため、出力上限を下げます")
-        return max(1, min(self.max_new_tokens, room))
+        return max(1, min(wanted, room))
 
     def _eos_ids(self) -> set[int]:
         eos = self.model.generation_config.eos_token_id
         return set(eos) if isinstance(eos, (list, tuple)) else {eos}
+
+
+_CLIENT: QwenVlmClient | None = None
+
+
+def get_client(config: Config) -> QwenVlmClient:
+    """モデルの読み込みは時間がかかるので、1回の実行の中では使い回す(区切りの判定とMarkdown化で共有)"""
+    global _CLIENT
+    if _CLIENT is None:
+        _CLIENT = QwenVlmClient(config)
+    return _CLIENT
 
 
 class MarkdownCleaner:
@@ -185,7 +202,7 @@ class VlmMarkdownConverter(Step):
         if not tasks:
             self.log("Markdown化待ちのページはありません")
             return
-        client = QwenVlmClient(self.config)  # 必要な時だけ読み込む
+        client = get_client(self.config)  # 必要な時だけ読み込む
         for i, (img, js, out) in enumerate(tasks, 1):
             self.log(f"[{i}/{len(tasks)}] {img.name}")
             try:

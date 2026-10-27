@@ -9,11 +9,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent  # capture_vlm/
 
 @dataclass
 class Config:
+    # --- 処理方式 ---
+    mode: str = "section"                        # "section"(節ごと) / "page"(1ページずつ)。--mode で上書き可
+
     # --- ディレクトリ ---
     pdf_dir: Path = BASE_DIR / "pdf"
     image_dir: Path = BASE_DIR / "images"
     json_dir: Path = BASE_DIR / "ocr_json"
     output_dir: Path = BASE_DIR / "output_md"
+    chunk_dir: Path = BASE_DIR / "chunks"        # 節ごとの区切り(範囲JSON)の保存先
 
     # --- PDF → 画像(VLM入力専用) ---
     render_dpi: int = 200
@@ -34,6 +38,20 @@ class Config:
     gpu_reserve_gib: float = 2.0                 # 推論時の作業領域として各GPUに残す量
     min_gpu_free_gib: float = 6.0                # 空きがこれ未満のGPUは使わない(小容量GPU・使用中GPUを除外)
     cpu_memory_limit: str = "64GiB"              # GPUに載らない分を置くCPUメモリの上限
+
+    # --- 節ごとの処理(section モード) ---
+    section_level: int = 2                       # 区切る見出しの階層(1=章, 2=節)
+    max_pages_per_chunk: int = 3                 # 1回にVLMへ入れる最大ページ数(重複ページを含む)
+    min_plate_run: int = 2                       # 図版ページがこの枚数以上続けば図版だけでまとめる
+    section_max_image_pixels: int = 1_200_000    # 複数ページを入れるため、1枚あたりの画素数を抑える
+    boundary_llm: str = "ambiguous"              # 区切り判定でのLLMの使い方: "off" / "ambiguous"(迷う箇所だけ) / "all"
+    heading_accept_score: float = 4.0            # 見出しと認める点数
+    heading_candidate_score: float = 2.0         # 見出し候補として扱う点数(この間はLLMで確認)
+    # 1冊の報告書が複数のPDFに分かれている場合のファイル名の規則(report=報告書名, order=順番)
+    report_patterns: tuple = (
+        r"^(?P<report>.+)\((?P<order>\d+)\)$",          # eriseki_005(1), eriseki_005(2), ...
+        r"^(?P<report>.+?)_(?P<order>\d{3})_\d{3}$",      # 014_001_004, 014_005_008, ...(開始_終了ページ)
+    )
 
     # --- 共通 ---
     overwrite: bool = False
