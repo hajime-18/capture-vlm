@@ -1,0 +1,96 @@
+nohup: ignoring input
+処理方式: section
+対象PDF: 013_001_055.pdf
+=== [PDF → 画像(VLM用)] ===
+  013_001_055.pdf: 55ページ中 55ページを画像化
+=== [OCR (NDLOCR-Lite)] ===
+  1冊 / 55ページをOCRします(device: cuda)
+[1;31m2026-10-29 17:16:05.991124546 [E:onnxruntime:Default, provider_bridge_ort.cc:2369 TryGetProviderInfo_CUDA] /onnxruntime_src/onnxruntime/core/session/provider_bridge_ort.cc:1962 onnxruntime::Provider& onnxruntime::ProviderLibrary::Get() [ONNXRuntimeError] : 1 : FAIL : Failed to load library /home3/tsukahara/study/capture_vlm/venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime_providers_cuda.so with error: libcudnn.so.9: cannot open shared object file: No such file or directory
+[m
+[0;93m2026-10-29 17:16:05.991185424 [W:onnxruntime:Default, onnxruntime_pybind_state.cc:1094 CreateExecutionProviderFactoryInstance] Failed to create CUDAExecutionProvider. Require cuDNN 9.* and CUDA 12.*. Please install all dependencies as mentioned in the GPU requirements page (https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#requirements), make sure they're in the PATH, and that your GPU is supported.[m
+[1;31m2026-10-29 17:16:07.718744634 [E:onnxruntime:Default, provider_bridge_ort.cc:2369 TryGetProviderInfo_CUDA] /onnxruntime_src/onnxruntime/core/session/provider_bridge_ort.cc:1962 onnxruntime::Provider& onnxruntime::ProviderLibrary::Get() [ONNXRuntimeError] : 1 : FAIL : Failed to load library /home3/tsukahara/study/capture_vlm/venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime_providers_cuda.so with error: libcudnn.so.9: cannot open shared object file: No such file or directory
+[m
+[0;93m2026-10-29 17:16:07.718798963 [W:onnxruntime:Default, onnxruntime_pybind_state.cc:1094 CreateExecutionProviderFactoryInstance] Failed to create CUDAExecutionProvider. Require cuDNN 9.* and CUDA 12.*. Please install all dependencies as mentioned in the GPU requirements page (https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#requirements), make sure they're in the PATH, and that your GPU is supported.[m
+[1;31m2026-10-29 17:16:11.721336081 [E:onnxruntime:Default, provider_bridge_ort.cc:2369 TryGetProviderInfo_CUDA] /onnxruntime_src/onnxruntime/core/session/provider_bridge_ort.cc:1962 onnxruntime::Provider& onnxruntime::ProviderLibrary::Get() [ONNXRuntimeError] : 1 : FAIL : Failed to load library /home3/tsukahara/study/capture_vlm/venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime_providers_cuda.so with error: libcudnn.so.9: cannot open shared object file: No such file or directory
+[m
+[0;93m2026-10-29 17:16:11.721380495 [W:onnxruntime:Default, onnxruntime_pybind_state.cc:1094 CreateExecutionProviderFactoryInstance] Failed to create CUDAExecutionProvider. Require cuDNN 9.* and CUDA 12.*. Please install all dependencies as mentioned in the GPU requirements page (https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#requirements), make sure they're in the PATH, and that your GPU is supported.[m
+[1;31m2026-10-29 17:16:12.632162725 [E:onnxruntime:Default, provider_bridge_ort.cc:2369 TryGetProviderInfo_CUDA] /onnxruntime_src/onnxruntime/core/session/provider_bridge_ort.cc:1962 onnxruntime::Provider& onnxruntime::ProviderLibrary::Get() [ONNXRuntimeError] : 1 : FAIL : Failed to load library /home3/tsukahara/study/capture_vlm/venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime_providers_cuda.so with error: libcudnn.so.9: cannot open shared object file: No such file or directory
+[m
+[0;93m2026-10-29 17:16:12.632234243 [W:onnxruntime:Default, onnxruntime_pybind_state.cc:1094 CreateExecutionProviderFactoryInstance] Failed to create CUDAExecutionProvider. Require cuDNN 9.* and CUDA 12.*. Please install all dependencies as mentioned in the GPU requirements page (https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#requirements), make sure they're in the PATH, and that your GPU is supported.[m
+[INFO] Intialize Model
+[INFO] OCR PDF page 1/55: 013_001_055.pdf
+[INFO] OCR PDF page 2/55: 013_001_055.pdf
+[INFO] OCR PDF page 3/55: 013_001_055.pdf
+[INFO] OCR PDF page 4/55: 013_001_055.pdf
+[INFO] OCR PDF page 5/55: 013_001_055.pdf
+[INFO] OCR PDF page 6/55: 013_001_055.pdf
+[INFO] OCR PDF page 7/55: 013_001_055.pdf
+[INFO] OCR PDF page 8/55: 013_001_055.pdf
+[INFO] OCR PDF page 9/55: 013_001_055.pdf
+[INFO] OCR PDF page 10/55: 013_001_055.pdf
+[INFO] OCR PDF page 11/55: 013_001_055.pdf
+[INFO] OCR PDF page 12/55: 013_001_055.pdf
+[INFO] OCR PDF page 13/55: 013_001_055.pdf
+[INFO] OCR PDF page 14/55: 013_001_055.pdf
+[INFO] OCR PDF page 15/55: 013_001_055.pdf
+[INFO] OCR PDF page 16/55: 013_001_055.pdf
+[INFO] OCR PDF page 17/55: 013_001_055.pdf
+[INFO] OCR PDF page 18/55: 013_001_055.pdf
+[INFO] OCR PDF page 19/55: 013_001_055.pdf
+[INFO] OCR PDF page 20/55: 013_001_055.pdf
+[INFO] OCR PDF page 21/55: 013_001_055.pdf
+[INFO] OCR PDF page 22/55: 013_001_055.pdf
+[INFO] OCR PDF page 23/55: 013_001_055.pdf
+[INFO] OCR PDF page 24/55: 013_001_055.pdf
+[INFO] OCR PDF page 25/55: 013_001_055.pdf
+[INFO] OCR PDF page 26/55: 013_001_055.pdf
+[INFO] OCR PDF page 27/55: 013_001_055.pdf
+[INFO] OCR PDF page 28/55: 013_001_055.pdf
+[INFO] OCR PDF page 29/55: 013_001_055.pdf
+[INFO] OCR PDF page 30/55: 013_001_055.pdf
+[INFO] OCR PDF page 31/55: 013_001_055.pdf
+[INFO] OCR PDF page 32/55: 013_001_055.pdf
+[INFO] OCR PDF page 33/55: 013_001_055.pdf
+[INFO] OCR PDF page 34/55: 013_001_055.pdf
+[INFO] OCR PDF page 35/55: 013_001_055.pdf
+[INFO] OCR PDF page 36/55: 013_001_055.pdf
+[INFO] OCR PDF page 37/55: 013_001_055.pdf
+[INFO] OCR PDF page 38/55: 013_001_055.pdf
+[INFO] OCR PDF page 39/55: 013_001_055.pdf
+[INFO] OCR PDF page 40/55: 013_001_055.pdf
+[INFO] OCR PDF page 41/55: 013_001_055.pdf
+[INFO] OCR PDF page 42/55: 013_001_055.pdf
+[INFO] OCR PDF page 43/55: 013_001_055.pdf
+[INFO] OCR PDF page 44/55: 013_001_055.pdf
+[INFO] OCR PDF page 45/55: 013_001_055.pdf
+[INFO] OCR PDF page 46/55: 013_001_055.pdf
+[INFO] OCR PDF page 47/55: 013_001_055.pdf
+[INFO] OCR PDF page 48/55: 013_001_055.pdf
+[INFO] OCR PDF page 49/55: 013_001_055.pdf
+[INFO] OCR PDF page 50/55: 013_001_055.pdf
+[INFO] OCR PDF page 51/55: 013_001_055.pdf
+[INFO] OCR PDF page 52/55: 013_001_055.pdf
+[INFO] OCR PDF page 53/55: 013_001_055.pdf
+[INFO] OCR PDF page 54/55: 013_001_055.pdf
+[INFO] OCR PDF page 55/55: 013_001_055.pdf
+[INFO] Writing text-layer PDF: /home3/tsukahara/study/capture_vlm/tmpkhdnsg9g/out/013_001_055_text.pdf
+Total PDF calculation time: 102.52144050598145
+  013_001_055: 55ページ分のOCR結果を取得
+[1;31m2026-10-29 17:17:57.628815391 [E:onnxruntime:Default, provider_bridge_ort.cc:2369 TryGetProviderInfo_CUDA] /onnxruntime_src/onnxruntime/core/session/provider_bridge_ort.cc:1962 onnxruntime::Provider& onnxruntime::ProviderLibrary::Get() [ONNXRuntimeError] : 1 : FAIL : Failed to load library /home3/tsukahara/study/capture_vlm/venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime_providers_cuda.so with error: libcudnn.so.9: cannot open shared object file: No such file or directory
+[m
+[0;93m2026-10-29 17:17:57.628865739 [W:onnxruntime:Default, onnxruntime_pybind_state.cc:1094 CreateExecutionProviderFactoryInstance] Failed to create CUDAExecutionProvider. Require cuDNN 9.* and CUDA 12.*. Please install all dependencies as mentioned in the GPU requirements page (https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html#requirements), make sure they're in the PATH, and that your GPU is supported.[m
+  柱・ノンブルの文字を読み取り: 87箇所
+=== [区切りの判定] ===
+  013: 1個のPDF / 55ページ
+    目次: 40項目(本文中で位置を特定: 36項目)
+    VLMで見出しを確認(画像とOCR結果): 28ページ
+  モデルを読み込み中: Qwen/Qwen3.5-9B (量子化: 4bit)
+    GPU 0 (Quadro GV100): 空き 26.6/31.7 GiB → 14.0 GiB まで使用
+    GPU 1 (Quadro GP100): 空き 15.6/15.9 GiB → 13.6 GiB まで使用
+    GPU 2 (Quadro P400): 空き 1.9/1.9 GiB → 使用しない
+Loading weights:   0%|          | 0/760 [00:00<?, ?it/s]Loading weights:   0%|          | 1/760 [00:00<06:39,  1.90it/s]Loading weights:   0%|          | 2/760 [00:01<06:41,  1.89it/s]Loading weights:   1%|          | 7/760 [00:01<01:32,  8.10it/s]Loading weights:   2%|▏         | 13/760 [00:01<00:46, 16.12it/s]Loading weights:   3%|▎         | 22/760 [00:01<00:25, 29.46it/s]Loading weights:   4%|▎         | 28/760 [00:01<00:22, 32.72it/s]Loading weights:   5%|▌         | 38/760 [00:01<00:15, 46.60it/s]Loading weights:   6%|▌         | 45/760 [00:01<00:15, 47.00it/s]Loading weights:   7%|▋         | 51/760 [00:01<00:15, 46.55it/s]Loading weights:   8%|▊         | 62/760 [00:02<00:11, 60.40it/s]Loading weights:   9%|▉         | 69/760 [00:02<00:12, 54.62it/s]Loading weights:  11%|█         | 80/760 [00:02<00:10, 63.25it/s]Loading weights:  12%|█▏        | 90/760 [00:02<00:09, 68.33it/s]Loading weights:  13%|█▎        | 98/760 [00:02<00:10, 60.96it/s]Loading weights:  14%|█▍        | 105/760 [00:02<00:11, 55.13it/s]Loading weights:  15%|█▌        | 116/760 [00:02<00:09, 65.46it/s]Loading weights:  16%|█▋        | 124/760 [00:03<00:11, 57.66it/s]Loading weights:  18%|█▊        | 133/760 [00:03<00:09, 62.82it/s]Loading weights:  19%|█▉        | 143/760 [00:03<00:09, 68.39it/s]Loading weights:  20%|█▉        | 151/760 [00:03<00:09, 62.99it/s]Loading weights:  21%|██        | 158/760 [00:03<00:10, 58.72it/s]Loading weights:  22%|██▎       | 171/760 [00:03<00:07, 74.21it/s]Loading weights:  24%|██▎       | 179/760 [00:03<00:08, 71.65it/s]Loading weights:  25%|██▍       | 187/760 [00:03<00:08, 64.32it/s]Loading weights:  26%|██▌       | 199/760 [00:04<00:07, 76.65it/s]Loading weights:  27%|██▋       | 208/760 [00:04<00:09, 58.65it/s]Loading weights:  29%|██▉       | 222/760 [00:04<00:07, 71.36it/s]Loading weights:  30%|███       | 231/760 [00:04<00:07, 70.03it/s]Loading weights:  31%|███▏      | 239/760 [00:04<00:07, 70.55it/s]Loading weights:  33%|███▎      | 249/760 [00:04<00:07, 72.76it/s]Loading weights:  34%|███▍      | 257/760 [00:05<00:07, 65.28it/s]Loading weights:  35%|███▍      | 264/760 [00:05<00:08, 59.74it/s]Loading weights:  36%|███▋      | 277/760 [00:05<00:06, 75.92it/s]Loading weights:  38%|███▊      | 286/760 [00:05<00:06, 74.10it/s]Loading weights:  39%|███▊      | 294/760 [00:05<00:07, 63.29it/s]Loading weights:  40%|████      | 306/760 [00:05<00:06, 74.40it/s]Loading weights:  41%|████▏     | 315/760 [00:05<00:07, 61.01it/s]Loading weights:  43%|████▎     | 328/760 [00:05<00:05, 74.16it/s]Loading weights:  44%|████▍     | 337/760 [00:06<00:06, 70.16it/s]Loading weights:  45%|████▌     | 345/760 [00:06<00:05, 71.87it/s]Loading weights:  46%|████▋     | 353/760 [00:06<00:05, 72.69it/s]Loading weights:  48%|████▊     | 361/760 [00:06<00:06, 59.53it/s]Loading weights:  48%|████▊     | 368/760 [00:06<00:06, 56.54it/s]Loading weights:  50%|█████     | 381/760 [00:06<00:05, 70.74it/s]Loading weights:  51%|█████     | 389/760 [00:06<00:05, 66.47it/s]Loading weights:  52%|█████▏    | 398/760 [00:07<00:05, 70.61it/s]Loading weights:  54%|█████▎    | 408/760 [00:07<00:04, 75.46it/s]Loading weights:  55%|█████▍    | 416/760 [00:07<00:05, 63.48it/s]Loading weights:  56%|█████▌    | 423/760 [00:07<00:05, 58.21it/s]Loading weights:  59%|█████▊    | 445/760 [00:07<00:03, 94.97it/s]Loading weights:  63%|██████▎   | 477/760 [00:07<00:01, 149.53it/s]Loading weights:  66%|██████▋   | 505/760 [00:07<00:01, 181.04it/s]Loading weights:  71%|███████   | 537/760 [00:07<00:01, 215.65it/s]Loading weights:  75%|███████▍  | 567/760 [00:08<00:00, 237.09it/s]Loading weights:  79%|███████▊  | 598/760 [00:08<00:00, 256.03it/s]Loading weights:  83%|████████▎ | 629/760 [00:08<00:00, 269.79it/s]Loading weights:  86%|████████▋ | 657/760 [00:08<00:00, 266.62it/s]Loading weights:  90%|█████████ | 685/760 [00:08<00:00, 266.58it/s]Loading weights:  94%|█████████▍| 713/760 [00:08<00:00, 266.37it/s]Loading weights:  97%|█████████▋| 740/760 [00:08<00:00, 260.79it/s]Loading weights: 100%|██████████| 760/760 [00:08<00:00, 86.75it/s] 
+  コンテキスト長: 262144 / 最大出力: 8192 トークン
+[transformers] `causal_conv1d_fn` is falling back to its reference PyTorch implementation because `causal_conv1d` is not installed. This is correct but much slower; install `causal_conv1d` for the optimized kernel.
+[transformers] `chunk_gated_delta_rule` is falling back to its reference PyTorch implementation because `flash-linear-attention` is not installed. This is correct but much slower; install `flash-linear-attention` for the optimized kernel.
+[transformers] `causal_conv1d_update` is falling back to its reference PyTorch implementation because `causal_conv1d` is not installed. This is correct but much slower; install `causal_conv1d` for the optimized kernel.
+[transformers] `fused_recurrent_gated_delta_rule` is falling back to its reference PyTorch implementation because `flash-linear-attention` is not installed. This is correct but much slower; install `flash-linear-attention` for the optimized kernel.

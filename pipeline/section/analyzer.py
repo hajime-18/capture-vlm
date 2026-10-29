@@ -3,7 +3,7 @@
   1. 目次      : 見出しの一覧と階層、印刷上のページ番号
   2. 書式ルール: 見出しの書き方・文字の大きさ・OCRの種別による点数
   3. 柱        : ページ上部の章題が変わったページ
-  4. LLM       : 1〜3で判断がつかない箇所の確認(Config.boundary_llm)
+  4. VLM       : 1〜3で判断がつかない箇所を、ページ画像とOCR結果で確認(Config.boundary_llm)
 """
 
 import difflib
@@ -11,9 +11,9 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
 from ..config import Config
-from .headings import HeadingCandidate, HeadingRuleDetector, default_rank
+from .headings import HeadingCandidate, HeadingRuleDetector, default_rank, style_of
 from .llm_judge import LlmBoundaryJudge
-from .ocr_page import OcrPage
+from .ocr_page import Line, OcrPage, normalize
 from .page_map import PageMapper
 from .toc import TocEntry, TocParser
 
@@ -23,19 +23,23 @@ class Heading:
     page: OcrPage
     line_id: int
     order: int
-    text: str
+    text: str            # 見出しの表記(VLMが読み直した場合はその表記)
     level: int
     score: float
     sources: list[str]
     style: str | None
+    ocr_text: str = ""   # OCRが読み取った表記
 
     @property
     def global_page(self) -> int:
         return self.page.ref.global_no
 
     def to_dict(self) -> dict:
-        return {"page": self.global_page, "line_id": self.line_id, "text": self.text, "level": self.level,
-                "score": round(self.score, 2), "sources": self.sources, "style": self.style}
+        d = {"page": self.global_page, "line_id": self.line_id, "text": self.text, "level": self.level,
+             "score": round(self.score, 2), "sources": self.sources, "style": self.style}
+        if self.ocr_text and self.ocr_text != self.text:
+            d["ocr_text"] = self.ocr_text
+        return d
 
 
 @dataclass
@@ -90,10 +94,11 @@ class StructureAnalyzer:
                     c.score += 1
                     c.sources.add("pillar")
 
-        # --- 4. LLM ---
+        # --- 4. VLM(ページ画像とOCR結果) ---
         llm_pages = self._llm_targets(pages, cands, changes, unlocated, mapper, toc_nos)
         if self.judge and llm_pages:
-            self.log(f"LLMで見出しを確認: {len(llm_pages)}ページ")
+            how = "画像とOCR結果" if self.config.boundary_use_image else "OCR結果"
+            self.log(f"VLMで見出しを確認({how}): {len(llm_pages)}ページ")
             for no in llm_pages:
                 self._apply_llm(by_no[no], cands, self._nearby_toc(entries, mapper, no))
 
@@ -174,7 +179,7 @@ class StructureAnalyzer:
             prev = cur
         return changes
 
-    # ---------- LLM ----------
+    # ---------- VLM ----------
     def _llm_targets(self, pages, cands, changes, unlocated, mapper, toc_nos) -> list[int]:
         cfg = self.config
         mode = cfg.boundary_llm
@@ -190,6 +195,9 @@ class StructureAnalyzer:
         for no in changes:  # 柱が変わったのに大見出しが見つからないページ
             if not any(c.page.ref.global_no == no and c.score >= cfg.heading_accept_score for c in cands.values()):
                 targets.add(no)
+        for c in cands.values():  # 見出しらしいのに書式も目次も無く、階層が決まらない行(OCRの読み誤りの可能性)
+            if c.score >= cfg.heading_accept_score and c.style is None and "toc" not in c.sources:
+                targets.add(c.page.ref.global_no)
         for e in unlocated:  # 目次にあるのに本文で見つからない見出し
             g = self._expected_page(mapper, e.printed_page)
             if g:
@@ -216,28 +224,45 @@ class StructureAnalyzer:
         cfg = self.config
         result = self.judge.judge(page, toc_hint)
         if result is None:
-            self.log(f"[警告] LLMの応答を解釈できませんでした: 通し{page.ref.global_no}ページ")
+            self.log(f"[警告] VLMの応答を解釈できませんでした: 通し{page.ref.global_no}ページ")
             return
         no = page.ref.global_no
-        for line_id, level in result.items():
+        for line_id, decision in result.items():
+            level = decision.level
             key = (no, line_id)
             c = cands.get(key)
             if c is None:
-                # ルールでは候補にならなかった行。LLMの判断だけで決めず、ルールの点数(長い文などは負)も加える
+                # ルールでは候補にならなかった行。VLMの判断だけで決めず、ルールの点数(長い文などは負)も加える
                 line = page.line_by_id(line_id)
                 style, score, reasons = HeadingRuleDetector.score_line(page, line)
                 c = HeadingCandidate(page, line, style, max(score, 0) + 3 if score >= 0 else score + 3,
-                                     reasons + ["LLMが見出しと判断"], set())
+                                     reasons + ["VLMが見出しと判断"], set())
                 cands[key] = c
             else:
                 c.score += 3
-                c.reasons.append("LLMが見出しと判断")
+                c.reasons.append("VLMが見出しと判断")
             c.sources.add("llm")
             c.llm_level = level
-        for c in cands.values():  # LLMが選ばなかった中間の候補は下げる
+            self._apply_text_fix(c, decision.text)
+        for c in cands.values():  # VLMが選ばなかった中間の候補は下げる
             if c.page.ref.global_no == no and "llm" not in c.sources and "toc" not in c.sources \
                     and c.score < cfg.heading_accept_score:
                 c.score -= 2
+
+    def _apply_text_fix(self, c: HeadingCandidate, text: str | None) -> None:
+        """
+        VLMが画像から読み直した表記を記録する。OCRでは書式が分からなかった行(例:「序」が「17」と読まれた)は、
+        読み直した表記で書式を判定し直す(「序」なら前付けの見出し、「第2節…」なら節)。
+        """
+        if not text or normalize(text) == c.line.norm:
+            return
+        c.llm_text = text
+        c.reasons.append(f"VLMが表記を修正: 「{c.line.text.strip()}」→「{text}」")
+        if c.style is None:
+            fixed = style_of(Line(c.line.id, c.line.order, text, c.line.type, c.line.x0, c.line.y0,
+                                  c.line.x1, c.line.y1, c.line.conf))
+            if fixed:
+                c.style = fixed
 
     # ---------- 階層の決定 ----------
     def _finalize(self, cands, entries) -> list[Heading]:
@@ -256,8 +281,8 @@ class StructureAnalyzer:
                 level = c.llm_level
             else:
                 level = 9  # 階層が分からない見出しは区切りに使わない
-            headings.append(Heading(c.page, c.line.id, c.line.order, c.line.text.strip(), level,
-                                    c.score, sorted(c.sources), c.style))
+            headings.append(Heading(c.page, c.line.id, c.line.order, (c.llm_text or c.line.text).strip(), level,
+                                    c.score, sorted(c.sources), c.style, ocr_text=c.line.text.strip()))
         headings.sort(key=lambda h: (h.global_page, h.order))
         return headings
 

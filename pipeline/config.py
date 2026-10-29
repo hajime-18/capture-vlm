@@ -44,7 +44,9 @@ class Config:
     max_pages_per_chunk: int = 3                 # 1回にVLMへ入れる最大ページ数(重複ページを含む)
     min_plate_run: int = 2                       # 図版ページがこの枚数以上続けば図版だけでまとめる
     section_max_image_pixels: int = 1_200_000    # 複数ページを入れるため、1枚あたりの画素数を抑える
-    boundary_llm: str = "ambiguous"              # 区切り判定でのLLMの使い方: "off" / "ambiguous"(迷う箇所だけ) / "all"
+    boundary_llm: str = "ambiguous"              # 区切り判定でのVLMの使い方: "off" / "ambiguous"(迷う箇所だけ) / "all"
+    boundary_use_image: bool = True              # 区切り判定のVLMにページ画像も入力する
+    boundary_image_pixels: int = 800_000         # 区切り判定用の画像の最大画素数(見出しの見た目が分かれば十分)
     heading_accept_score: float = 4.0            # 見出しと認める点数
     heading_candidate_score: float = 2.0         # 見出し候補として扱う点数(この間はLLMで確認)
     # 1冊の報告書が複数のPDFに分かれている場合のファイル名の規則(report=報告書名, order=順番)

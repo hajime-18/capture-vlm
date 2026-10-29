@@ -20,7 +20,7 @@
    images/{PDF名}_p0001.png        ocr_json/{PDF名}_p0001.json
               └────────────────┬────────────────┘
                                │ [plan] 区切りの判定
-                               │   目次・見出しの書式・柱・LLM を総合して章・節を判定し、
+                               │   目次・見出しの書式・柱・VLM を総合して章・節を判定し、
                                │   VLMに1回で入れる範囲(チャンク)を決めて保存する
                                ▼
               chunks/{報告書名}/chunk_0001.json …(+ plan.md で確認)
@@ -60,7 +60,7 @@ capture_vlm/
 │       ├── toc.py              #   目次の読み取り
 │       ├── headings.py         #   見出しの書式による判定
 │       ├── page_map.py         #   印刷ページ番号と通し番号の対応
-│       ├── llm_judge.py        #   LLMによる見出しの判定
+│       ├── llm_judge.py        #   VLMによる見出しの判定(ページ画像も使う)
 │       ├── analyzer.py         #   上記を総合して見出しを確定
 │       ├── figures.py          #   図の番号付けと切り出し
 │       ├── chunker.py          #   チャンク(VLMに入れる範囲)の決定
@@ -178,7 +178,7 @@ less chunks/eriseki_005/plan.md
 CUDA_VISIBLE_DEVICES=1 python main.py --pdf "eriseki_005*" --only vlm merge
 ```
 
-`plan` でLLMを使う設定(`boundary_llm`)のときは、手順1でもGPUを使います。
+`plan` でVLMを使う設定(`boundary_llm` が `"off"` 以外)のときは、手順1でもGPUを使います。
 
 ### オプション
 
@@ -189,6 +189,7 @@ CUDA_VISIBLE_DEVICES=1 python main.py --pdf "eriseki_005*" --only vlm merge
 | `--mode {section,page}` | 処理方式です(省略時は `config.py` の `mode`)。 |
 | `--overwrite` | 出力済みのものも作り直します。 |
 | `--ocr-device {cuda,cpu}` | OCRに使うデバイスです(初期値は `cuda`)。 |
+| `--clean` | `images/` `ocr_json/` `chunks/` `output_md/` の生成物を、一覧を表示して確認したうえで削除します(`pdf/` は削除しません)。`--pdf` と組み合わせると、そのPDFを含む報告書の分だけを削除します。パイプラインは実行しません。 |
 
 ### 実行例
 
@@ -204,6 +205,10 @@ python main.py --mode page --pdf arcou_vlm_test
 
 # 設定を変えたので、区切りの判定からやり直す
 python main.py --pdf "eriseki_005*" --only plan vlm merge --overwrite
+
+# 生成物を削除する(すべて / 指定した報告書だけ)
+python main.py --clean
+python main.py --clean --pdf "eriseki_005*"
 ```
 
 括弧を含むファイル名とワイルドカードは、必ず引用符で囲んでください。囲まないと、シェルが括弧を構文として解釈したり、ワイルドカードを別のディレクトリで展開したりします。
@@ -230,17 +235,23 @@ python main.py --pdf "eriseki_005*" --only plan vlm merge --overwrite
 | 目次 | 目次ページから見出しと印刷上のページ番号を読み取り、本文の行と照合する。一致した見出しは確実性が高く、目次での字下げから階層(章・節)も決まる |
 | 書式 | 「第3章」「第2節」「Ⅱ」「1.」「(1)」などの書き方、OCRの種別(見出し)、文字の大きさ、行の長さ、句読点で終わらないこと |
 | 柱 | ページ上部の章題が変わったページは、章の始まりである可能性が高い |
-| LLM | 上の手がかりで判断が分かれる行を、OCRの文字列と文字の大きさからLLMに判定させる(画像は使わない) |
+| VLM | 上の手がかりで判断が分かれるページを、ページ画像(縮小したもの)とOCR結果からVLMに判定させる |
 
-点数が `heading_accept_score` 以上の行を見出しとし、`heading_candidate_score` との間の行は、LLMで確認します。LLMが「見出しだ」と判断しても、長い文や句読点で終わる行は書式の点数が低いため見出しになりません(LLMの誤答だけで区切られないようにするため)。
+点数が `heading_accept_score` 以上の行を見出しとし、`heading_candidate_score` との間の行は、VLMで確認します。VLMが「見出しだ」と判断しても、長い文や句読点で終わる行は書式の点数が低いため見出しになりません(VLMの誤答だけで区切られないようにするため)。
 
-`boundary_llm` で、LLMの使い方を選べます。
+**VLMに任せているのは「どの行が見出しで、章・節・項のどれか」の判定だけ** です。どこで区切るか(節単位、ページ途中の重複、図版のまとめ、ページ数の上限)は、すべてプログラム側(`chunker.py`)のルールで決めます。
+
+VLMにはページ画像も入力するため、文字の大きさ・太さ・中央寄せ・余白などの見た目を判断に使えます。また、見出しの正しい表記も答えさせるので、OCRが見出しを読み誤った場合(例:「序」が「17」と読まれた)も、画像のとおりに直した表記で見出しの種類と階層を決め直します。直した表記はチャンクの見出しやVLMへの指示文に使い、`plan.md` にはOCRの読み取りと並べて表示します。
+
+`boundary_llm` で、VLMを使う範囲を選べます。
 
 | 値 | 内容 |
 |---|---|
-| `"off"` | LLMを使わない(GPU不要で最も速い) |
-| `"ambiguous"`(初期値) | 判断が分かれる行のあるページ、柱が変わったのに見出しが見つからないページ、目次にあるのに本文で見つからない見出しの付近だけ |
+| `"off"` | VLMを使わない(GPU不要で最も速い) |
+| `"ambiguous"`(初期値) | 判断が分かれる行のあるページ、見出しらしいのに階層が決まらない行(OCRの読み誤りの可能性)のあるページ、柱が変わったのに見出しが見つからないページ、目次にあるのに本文で見つからない見出しの付近だけ |
 | `"all"` | 本文のすべてのページ(時間はかかるが、書式が独特な報告書に強い) |
+
+`boundary_use_image` を `False` にすると、画像を使わずOCR結果だけで判定します(速いが、OCRの読み誤りは直せない)。
 
 **ノンブル(印刷上のページ番号)について**: NDLOCR-Liteは柱とノンブルの領域を検出しても文字を読まないため、その領域だけをNDLOCR-Liteの文字認識モデルで読み足しています。ただし1桁の数字などは読み誤りが多いため、前後のページと番号が連続しているものだけを使います。ノンブルが使えない場合も、目次の見出しを本文と文字で照合し、そのずれから次の見出しの位置を予想します。
 
@@ -296,7 +307,7 @@ OCRが検出した図・写真に、報告書の中での通し番号(`F0001`, `
 | `render_dpi` | `200` | VLM用にPDFを画像化するときの解像度 |
 | `ndlocr_dir` | `ndlocr-lite` | NDLOCR-Liteを置いた場所 |
 | `ocr_pdf_dpi` | `200` | NDLOCR-LiteがPDFを読み取るときの解像度 |
-| `model_id` | `Qwen/Qwen3.5-9B` | 使用するVLM(区切りの判定のLLMも同じモデル) |
+| `model_id` | `Qwen/Qwen3.5-9B` | 使用するVLM(区切りの判定も同じモデル) |
 | `quantization` | `"4bit"` | `"4bit"` / `"8bit"` / `None`(量子化なし) |
 | `max_new_tokens` | `8192` | 1回(1ページまたは1チャンク)あたりの最大出力トークン数 |
 | `repetition_penalty` | `1.0` | 同じ行が繰り返し出力される場合は `1.05` 程度にする |
@@ -305,9 +316,11 @@ OCRが検出した図・写真に、報告書の中での通し番号(`F0001`, `
 | `section_level` | `2` | 区切る見出しの階層(1=章, 2=節) |
 | `max_pages_per_chunk` | `3` | 1回にVLMへ入れる最大ページ数(重複ページを含む) |
 | `min_plate_run` | `2` | 図版ページがこの枚数以上続けば図版だけでまとめる |
-| `boundary_llm` | `"ambiguous"` | 区切りの判定でのLLMの使い方(`"off"` / `"ambiguous"` / `"all"`) |
+| `boundary_llm` | `"ambiguous"` | 区切りの判定でのVLMの使い方(`"off"` / `"ambiguous"` / `"all"`) |
+| `boundary_use_image` | `True` | 区切りの判定でVLMにページ画像も入力する |
+| `boundary_image_pixels` | `800_000` | 区切りの判定に使う画像の最大画素数(見出しの見た目が分かれば十分なので小さめ) |
 | `heading_accept_score` | `4.0` | 見出しと認める点数 |
-| `heading_candidate_score` | `2.0` | LLMで確認する候補の点数 |
+| `heading_candidate_score` | `2.0` | VLMで確認する候補の点数 |
 | `report_patterns` | (上記) | 分割されたPDFを1冊にまとめるファイル名の規則 |
 | `gpu_memory_limit_gib` | `14.0` | GPU1枚あたりに載せるモデルの上限 |
 | `gpu_reserve_gib` | `2.0` | 推論時の作業領域として各GPUに残す量 |

@@ -59,7 +59,8 @@ class SectionPlanner(Step):
         judge = None
         if cfg.boundary_llm != "off":
             from ..vlm_converter import get_client
-            judge = LlmBoundaryJudge(lambda: get_client(cfg))
+            judge = LlmBoundaryJudge(lambda: get_client(cfg), use_image=cfg.boundary_use_image,
+                                     image_pixels=cfg.boundary_image_pixels)
         structure = StructureAnalyzer(cfg, judge, log=lambda m: self.log("  " + m)).analyze(pages)
         figures = FigureRegistry(pages)
         chunker = Chunker(cfg, pages, structure, figures)
@@ -88,7 +89,8 @@ class SectionPlanner(Step):
             "pdfs": [p.name for p in report.pdfs], "page_count": len(report.pages),
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "settings": {"section_level": cfg.section_level, "max_pages_per_chunk": cfg.max_pages_per_chunk,
-                         "boundary_llm": cfg.boundary_llm, "model_id": cfg.model_id if judge else None},
+                         "boundary_llm": cfg.boundary_llm, "boundary_use_image": cfg.boundary_use_image,
+                         "model_id": cfg.model_id if judge else None},
             "chunks": items,
         }
         (out / "plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -103,11 +105,15 @@ class SectionPlanner(Step):
     @staticmethod
     def _chunk_json(report: Report, c: Chunk, chunker: Chunker, pages: dict[int, OcrPage]) -> dict:
         scope = chunker.scope_lines(c)
+        head_text = {(h.global_page, h.line_id): h.text for h in chunker.all_headings}
+
         def line_text(no, order):
             if order is None:
                 return None
             l = next((x for x in pages[no].lines if x.order == order), None)
-            return {"line_id": l.id, "text": l.text} if l else None
+            if not l:
+                return None
+            return {"line_id": l.id, "text": head_text.get((no, l.id), l.text)}  # 見出しはVLMが直した表記を使う
         return {
             "format": CHUNK_FORMAT,
             "report": report.name,
@@ -167,9 +173,12 @@ class SectionPlanner(Step):
             pages = f"{c.start.page}" if c.start.page == c.end_page else f"{c.start.page}-{c.end_page}"
             crumb = " > ".join(c.breadcrumb + [c.title])
             lines.append(f"| {c.id} | {c.kind} | {pages} | {start} | {end} | {crumb} | {len(c.figures)} |")
-        lines += ["", "## 見出し", "", "| 通しページ | 階層 | 見出し | 根拠 | 点数 |", "|---|---|---|---|---|"]
+        lines += ["", "## 見出し", "", "| 通しページ | 階層 | 見出し | OCRの読み取り(違う場合) | 根拠 | 点数 |",
+                  "|---|---|---|---|---|---|"]
         for h in s.headings:
-            lines.append(f"| {h.global_page} | {h.level if h.level < 9 else '?'} | {h.text} | {', '.join(h.sources)} | {h.score:.1f} |")
+            ocr = h.ocr_text if h.ocr_text and h.ocr_text != h.text else ""
+            lines.append(f"| {h.global_page} | {h.level if h.level < 9 else '?'} | {h.text} | {ocr} | "
+                         f"{', '.join(h.sources)} | {h.score:.1f} |")
         if s.unlocated_toc:
             lines += ["", "## 本文で位置を特定できなかった目次の項目", ""]
             lines += [f"- {e.title}(印刷 {e.printed_page}ページ)" for e in s.unlocated_toc]

@@ -1,7 +1,7 @@
 """見出しの書式による判定(ルールベース)
 
 各行に点数を付け、Config.heading_accept_score 以上を見出し、
-Config.heading_candidate_score 以上を「見出しかもしれない」候補とする(候補はLLMで確認する)。
+Config.heading_candidate_score 以上を「見出しかもしれない」候補とする(候補はVLMで確認する)。
 """
 
 import re
@@ -72,6 +72,7 @@ class HeadingCandidate:
     sources: set[str] = field(default_factory=set)  # rule / toc / pillar / llm
     toc_level: int | None = None
     llm_level: int | None = None
+    llm_text: str | None = None   # VLMが画像から読み取った見出しの正しい表記
 
     @property
     def key(self) -> tuple[int, int]:

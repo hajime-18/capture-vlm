@@ -8,6 +8,8 @@
   python main.py --ocr-device cpu # OCRをCPUで実行する
   python main.py --pdf "eriseki_005(1).pdf" 014_001_004 # PDFを指定して実行(括弧を含む名前は引用符で囲む)
   python main.py --pdf "eriseki_005*"                   # ワイルドカードで指定
+  python main.py --clean                                # 生成物をすべて削除する(pdf/ は残す)
+  python main.py --clean --pdf "eriseki_005*"           # 指定したPDF(報告書)の生成物だけ削除する
 """
 
 import argparse
@@ -25,7 +27,9 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 from pipeline import Config, Pipeline
 from pipeline.base import PipelineError
+from pipeline.cleaner import OutputCleaner
 from pipeline.pipeline import ALL_STEP_NAMES, MODES
+from pipeline.target import TargetDocuments
 
 
 def parse_args():
@@ -37,7 +41,12 @@ def parse_args():
                         help="section: 節ごとにまとめて処理 / page: 1ページずつ処理(省略時は config.py の mode)")
     parser.add_argument("--overwrite", action="store_true", help="出力済みのファイルも作り直す")
     parser.add_argument("--ocr-device", choices=["cuda", "cpu"], default="cuda", help="OCRに使うデバイス")
-    return parser.parse_args()
+    parser.add_argument("--clean", action="store_true",
+                        help="images/ ocr_json/ chunks/ output_md/ の生成物を確認のうえ削除して終了する(pdf/ は削除しない)")
+    args = parser.parse_args()
+    if args.clean and (args.only or args.overwrite):
+        parser.error("--clean は --only・--overwrite と同時に指定できません")
+    return args
 
 
 def main():
@@ -46,6 +55,11 @@ def main():
     if args.mode:
         config.mode = args.mode
     try:
+        if args.clean:
+            targets = TargetDocuments(config, args.pdf)
+            targets.expand_to_reports()
+            OutputCleaner(config, targets).run()
+            return
         Pipeline(config, steps=args.only, pdf_names=args.pdf).run()
     except (FileNotFoundError, PipelineError, ValueError) as e:  # 利用者が対処できるものはメッセージだけ表示
         sys.exit(str(e))
