@@ -10,3 +10,14 @@ images/
 ocr_json/
 output_md/
 chunks/
+# 学習(train モード): 取得したデータセットと、学習・評価の記録(重みを含むため大きい)
+train_data/
+experiments/
+test/results/train_smoke/
+
+# 実効ログファイル
+*.log
+
+# testディレクトリの一部
+test/cap_graph/picture
+test/results

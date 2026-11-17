@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from .report import PageRef
 
 FIGURE_BLOCK_TYPES = {"図版", "組織図"}   # 図として扱うブロック
+TABLE_BLOCK_TYPES = {"表組"}              # 表として扱うブロック(HTMLにする)
 NON_CONTENT_TYPES = {"柱", "ノンブル"}     # 本文の内容ではない行
 
 

@@ -33,6 +33,8 @@ python main.py --mode page --pdf NAME                                   # per-pa
 - `section` mode (default): `pdf → ocr → plan → vlm → merge`, operating per *report* (book). Code lives in `pipeline/section/`.
 - `page` mode: `pdf → ocr → vlm → merge`, one page per VLM call (`vlm_converter.py`, `markdown_merger.py`, `prompt.py`).
 
+- `train` mode: `data → train → eval → report`, no PDFs. QLoRA-trains the VLM for table *structure* recognition (image → text-free HTML) on PubTabNet and the own dataset (`../make_dataset/dataset`), and compares base vs. trained runs with TEDS-Struct. Code lives in `pipeline/train/`. Every run/eval records init weights, dataset IDs + content hashes, settings and env under `experiments/`; keep that provenance intact when refactoring. Both ground truth and predictions go through `structure.to_structure_html()` before scoring. `test/train_smoke.py` is a quick end-to-end check.
+
 **All settings** are in the `Config` dataclass in `pipeline/config.py` (no CLI flags beyond those in `main.py`).
 
 **Targets and reports.** `TargetDocuments` (`target.py`) resolves `--pdf` arguments (name, stem, glob, or path). In section mode, `section/report.py` groups split PDFs into one report using `Config.report_patterns` (regex with `report` and `order` groups), and `expand_to_reports()` pulls in sibling PDFs of a partially specified report. Per-page artifacts are named `{pdf_stem}_p{NNNN}` (`Config.page_stem` / `page_name_re`).

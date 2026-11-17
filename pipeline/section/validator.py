@@ -38,9 +38,9 @@ class PlanValidator:
                 covered.add(page["global_page"])
                 if not (self.config.image_dir / page["image"]).exists():
                     problems.append(f"画像がありません: {page['image']} (チャンク {chunk['chunk_id']})")
-            for fig in chunk.get("figures", []):
+            for fig in chunk.get("figures", []) + chunk.get("tables", []):
                 if not (self.config.output_dir / report.name / fig["image"]).exists():
-                    problems.append(f"図の画像がありません: {fig['image']} (チャンク {chunk['chunk_id']})")
+                    problems.append(f"図・表の画像がありません: {fig['image']} (チャンク {chunk['chunk_id']})")
         missing = sorted(set(range(1, len(report.pages) + 1)) - covered)
         if missing:
             problems.append(f"どのチャンクにも含まれないページがあります: 通し{missing[:10]}")

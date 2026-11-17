@@ -10,6 +10,11 @@ transformers>=5.20,<6       # (5.20.0)
 accelerate>=1.15,<2         # (1.15.0)
 bitsandbytes>=0.50,<1       # (0.50.2)
 
+# 学習(train モード)
+peft>=0.21,<1               # (0.21.3)  LoRA
+apted>=1.0,<2               # (1.0.3)   TEDS-Struct の木の編集距離
+pyarrow>=26,<27             # (26.0.1)  PubTabNet(parquet)の読み込み
+
 # torch と torchvision は環境のCUDAに合わせて先に入れること(README「環境構築」の手順2)
 #   確認済み: torch 2.14.1+cu126 / torchvision 0.29.1+cu126
 

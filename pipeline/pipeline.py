@@ -9,6 +9,8 @@ from .section.merger import SectionMerger
 from .section.planner import SectionPlanner
 from .section.vlm import SectionVlmConverter
 from .target import TargetDocuments
+from .train.evaluator import ResultReporter, TableEvaluator, TrainDataPreparer
+from .train.trainer import TableTrainer
 from .vlm_converter import VlmMarkdownConverter
 
 # 処理方式ごとの段階(上から順に実行する)
@@ -25,6 +27,13 @@ MODES: dict[str, dict[str, type[Step]]] = {
         "plan": SectionPlanner,
         "vlm": SectionVlmConverter,
         "merge": SectionMerger,
+    },
+    # 表の構造認識の学習と、学習前後の評価(PDFは使わない)
+    "train": {
+        "data": TrainDataPreparer,
+        "train": TableTrainer,
+        "eval": TableEvaluator,
+        "report": ResultReporter,
     },
 }
 ALL_STEP_NAMES = list(dict.fromkeys(name for steps in MODES.values() for name in steps))
@@ -49,7 +58,10 @@ class Pipeline:
 
     def run(self) -> None:
         print(f"処理方式: {self.config.mode}")
-        if not self.targets.select_all:
+        if self.config.mode == "train":
+            print(f"学習データ: {', '.join(self.config.train_datasets)} / 評価データ: {', '.join(self.config.eval_datasets)}"
+                  f" / 重みの初期値: {self.config.train_init}")
+        elif not self.targets.select_all:
             print("対象PDF: " + ", ".join(p.name for p in self.targets.pdfs))
         for step in self.steps:
             print(f"=== [{step.name}] ===")

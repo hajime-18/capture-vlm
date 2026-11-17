@@ -11,8 +11,11 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from ort_setup import install_session_hook
+
 
 def main(src: str, job_path: str, out_path: str, device: str) -> None:
+    install_session_hook(device)
     sys.path.insert(0, src)
     import numpy as np
     import pypdfium2 as pdfium

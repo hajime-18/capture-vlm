@@ -21,7 +21,7 @@ class GenerationResult:
 class QwenVlmClient:
     """Qwen3.8 の読み込みと推論だけを担当する"""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, gpu_reserve_gib: float | None = None):
         import torch
         from transformers import AutoProcessor
         try:
@@ -33,6 +33,8 @@ class QwenVlmClient:
         self.max_new_tokens = config.max_new_tokens
         self.repetition_penalty = config.repetition_penalty
         self.max_image_pixels = config.max_image_pixels
+        self.adapter: str | None = None  # 使用中のLoRA(None なら学習前のモデルのまま)
+        self._adapters: set[str] = set()
         if not torch.cuda.is_available():
             raise RuntimeError("CUDAが使えません。torchのインストールを確認してください")
 
@@ -42,11 +44,13 @@ class QwenVlmClient:
             config.model_id,
             dtype=self._compute_dtype(),
             device_map="auto",
-            max_memory=self._max_memory(config),
+            max_memory=self._max_memory(config, gpu_reserve_gib),
             quantization_config=self._quantization_config(config.quantization),
             attn_implementation=config.attn_implementation,
         ).eval()
         self.context_length = self._context_length()
+        if config.lora_adapter:
+            self.use_adapter("default", Path(config.lora_adapter))
         print(f"  コンテキスト長: {self.context_length or '不明'} / 最大出力: {self.max_new_tokens} トークン")
 
     def _context_length(self) -> int | None:
@@ -64,8 +68,32 @@ class QwenVlmClient:
         majors = [torch.cuda.get_device_capability(i)[0] for i in range(torch.cuda.device_count())]
         return torch.bfloat16 if min(majors) >= 8 else torch.float16
 
-    def _max_memory(self, config: Config) -> dict:
+    def use_adapter(self, name: str | None, path: Path | None = None) -> None:
+        """学習したLoRAを使う。name=None なら学習前のモデルに戻す(読み込んだLoRAは残す)"""
+        if name is not None and name not in self._adapters:
+            if path is None or not (path / "adapter_config.json").exists():
+                raise FileNotFoundError(f"LoRAの重みが見つかりません: {path}")
+            from peft import PeftModel
+            print(f"  LoRAを読み込み中: {path}")
+            if self._adapters:
+                self.model.load_adapter(str(path), adapter_name=name)
+            else:
+                self.model = PeftModel.from_pretrained(self.model, str(path), adapter_name=name).eval()
+            self._adapters.add(name)
+        if name is not None:
+            self.model.set_adapter(name)
+        self.adapter = name
+
+    def _adapter_context(self):
+        """LoRAを読み込んだ後に学習前のモデルで推論するときは、LoRAを一時的に外す"""
+        import contextlib
+        if self._adapters and self.adapter is None:
+            return self.model.disable_adapter()
+        return contextlib.nullcontext()
+
+    def _max_memory(self, config: Config, reserve_gib: float | None = None) -> dict:
         """空き容量を調べ、十分に空いているGPUだけにモデルを配置する"""
+        reserve = config.gpu_reserve_gib if reserve_gib is None else reserve_gib
         GiB = 1024 ** 3
         mem = {}
         for i in range(self._torch.cuda.device_count()):
@@ -75,7 +103,7 @@ class QwenVlmClient:
             if free_gib < config.min_gpu_free_gib:
                 print(f"    GPU {i} ({name}): 空き {free_gib:.1f}/{total_gib:.1f} GiB → 使用しない")
                 continue
-            limit = min(config.gpu_memory_limit_gib, free_gib - config.gpu_reserve_gib)
+            limit = min(config.gpu_memory_limit_gib, free_gib - reserve)
             mem[i] = f"{limit:.1f}GiB"
             print(f"    GPU {i} ({name}): 空き {free_gib:.1f}/{total_gib:.1f} GiB → {limit:.1f} GiB まで使用")
         if not mem:
@@ -128,7 +156,7 @@ class QwenVlmClient:
             sizes = ", ".join(f"{i.size[0]}x{i.size[1]}" for i in loaded) or "なし"
             print(f"    画像 {len(loaded)}枚 ({sizes}px) / 入力 {input_len} トークン")
         try:
-            with self._torch.inference_mode():
+            with self._torch.inference_mode(), self._adapter_context():
                 ids = self.model.generate(
                     **inputs,
                     max_new_tokens=max_new,

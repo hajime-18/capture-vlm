@@ -44,6 +44,7 @@ class Config:
     max_pages_per_chunk: int = 3                 # 1回にVLMへ入れる最大ページ数(重複ページを含む)
     min_plate_run: int = 2                       # 図版ページがこの枚数以上続けば図版だけでまとめる
     section_max_image_pixels: int = 1_200_000    # 複数ページを入れるため、1枚あたりの画素数を抑える
+    table_max_image_pixels: int = 1_600_000      # 表をHTMLにするときの、切り出した表の画像の最大画素数
     boundary_llm: str = "ambiguous"              # 区切り判定でのVLMの使い方: "off" / "ambiguous"(迷う箇所だけ) / "all"
     boundary_use_image: bool = True              # 区切り判定のVLMにページ画像も入力する
     boundary_image_pixels: int = 800_000         # 区切り判定用の画像の最大画素数(見出しの見た目が分かれば十分)
@@ -54,6 +55,43 @@ class Config:
         r"^(?P<report>.+)\((?P<order>\d+)\)$",          # eriseki_005(1), eriseki_005(2), ...
         r"^(?P<report>.+?)_(?P<order>\d{3})_\d{3}$",      # 014_001_004, 014_005_008, ...(開始_終了ページ)
     )
+
+    lora_adapter: Path | None = None             # 学習したLoRAを推論に使う場合: experiments/runs/{実行名}/adapter
+
+    # --- 学習(train モード: 表の構造認識) ---
+    experiment_dir: Path = BASE_DIR / "experiments"                 # 学習・評価の記録の保存先
+    own_dataset_dir: Path = BASE_DIR.parent / "make_dataset" / "dataset"  # 自作の学習データ(table_structure.jsonl)
+    pubtabnet_dir: Path = BASE_DIR / "train_data" / "pubtabnet"     # PubTabNet を取得・変換して置く場所
+    table_structure_prompt: str = "この表の構造を、文字を含まないHTMLで出力してください。"
+    own_test_ratio: float = 0.2                  # 自作データのうち評価に回す割合
+    own_split_group: str = "page"                # 評価用に分ける単位: "page"(同じページの表はまとめる) / "report" / "table"
+    pubtabnet_train_shards: int = 1              # PubTabNet の train から取得するファイル数(1ファイル約1.6万件・約400MB)
+    pubtabnet_train_samples: int = 2000          # そこから学習に使う件数
+    pubtabnet_test_samples: int = 200            # PubTabNet の val から評価に使う件数
+    train_seed: int = 42                         # データの分割・抜き出し・LoRAの初期値・学習順の乱数の種
+    # 実験の指定(--run / --init / --train-data / --eval-data / --models で上書き)
+    train_run: str | None = None                 # 学習の実行名(省略時は日時・データ・初期値から自動で付ける)
+    train_init: str = "base"                     # 重みの初期値: "base"(学習前のモデル) / 学習済みの実行名(続きから学習)
+    train_datasets: tuple = ("pubtabnet", "own")
+    eval_datasets: tuple = ("pubtabnet", "own")
+    eval_models: tuple = ()                      # 評価するモデル("base" / 実行名)。空なら base と今回の実行
+    # LoRA・学習のハイパーパラメータ
+    lora_r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    lora_target_modules: tuple = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj",
+                                  "in_proj_qkv", "in_proj_z", "out_proj")  # 言語モデル側の線形層(画像エンコーダは対象外)
+    train_epochs: int = 1
+    learning_rate: float = 1e-4
+    warmup_ratio: float = 0.03
+    grad_accum_steps: int = 8                    # 1表ずつ処理し、この件数ごとに重みを更新する
+    max_grad_norm: float = 1.0
+    fp16_loss_scale: float = 1.0                 # fp16(Pascal・Volta)での損失の倍率。大きくすると線形注意の層の勾配が溢れる
+    train_max_image_pixels: int = 1_000_000      # 学習・評価で表の画像に使う最大画素数
+    train_max_length: int = 6144                 # これより長い(画像+正解のトークン数)表は学習に使わない
+    train_gpu_reserve_gib: float = 6.0           # 学習時に各GPUに残す作業領域(推論時より多く要る)
+    train_log_steps: int = 10                    # 何回の更新ごとに損失を表示するか
+    eval_max_new_tokens: int = 4096              # 評価での最大出力トークン数(自作データの最長の表で約3600)
 
     # --- 共通 ---
     overwrite: bool = False

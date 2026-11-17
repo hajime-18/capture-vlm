@@ -5,6 +5,7 @@
   各チャンクには「どの行から、どの行の手前まで」を scope として記録し、VLMにはその範囲だけを変換させる。
 - 図版ページが Config.min_plate_run 枚以上続く部分は、図版だけのチャンクにする。
 - Config.max_pages_per_chunk を超える範囲は、下位の見出し → ページ の順で分割する。
+各チャンクには、その位置で区切った理由を reason として記録する(plan.md・ログで確認できる)。
 """
 
 from dataclasses import dataclass, field
@@ -13,6 +14,14 @@ from ..config import Config
 from .analyzer import DocumentStructure, Heading
 from .figures import Figure, FigureRegistry
 from .ocr_page import Line, OcrPage
+
+SOURCE_LABELS = {"rule": "書式", "toc": "目次", "pillar": "柱", "llm": "VLM"}
+
+
+def describe_heading(h: Heading) -> str:
+    """見出しを区切りの理由として示す文字列(例: 第2階層の見出し「第1節 …」(根拠: 目次・書式, 点数 6.0))"""
+    sources = "・".join(SOURCE_LABELS.get(s, s) for s in h.sources) or "なし"
+    return f"第{h.level}階層の見出し「{h.text}」(根拠: {sources}, 点数 {h.score:.1f})"
 
 
 def is_before(line: Line, boundary: Line, page: OcrPage) -> bool:
@@ -54,6 +63,8 @@ class Chunk:
     end_before: int | None            # この order の行の手前まで(None ならページ末尾まで)
     headings: list[Heading] = field(default_factory=list)
     figures: list[Figure] = field(default_factory=list)
+    tables: list[Figure] = field(default_factory=list)
+    reason: str = ""                  # この位置から始めた(前のチャンクと区切った)理由
 
     @property
     def id(self) -> str:
@@ -65,33 +76,40 @@ class Chunk:
 
 
 class Chunker:
-    def __init__(self, config: Config, pages: list[OcrPage], structure: DocumentStructure, figures: FigureRegistry):
+    def __init__(self, config: Config, pages: list[OcrPage], structure: DocumentStructure, figures: FigureRegistry,
+                 tables: FigureRegistry):
         self.cfg = config
         self.pages = {p.ref.global_no: p for p in pages}
         self.first, self.last = min(self.pages), max(self.pages)
         self.structure = structure
         self.figures = figures
+        self.tables = tables
         self.all_headings = [h for h in structure.headings if h.level < 9]
         self.plate_pages = self._plate_runs()
 
     # ---------- 全体の流れ ----------
     def build(self) -> list[Chunk]:
         pieces = []
-        for seg_start, seg_end, heading in self._segments():
-            for start, end_page, end_before, plate in self._split_plates(seg_start, seg_end):
-                if plate:
-                    pieces.extend(self._plate_chunks(start.page, end_page))
+        for seg_start, seg_end, heading, seg_reason in self._segments():
+            for i, (start, end_page, end_before, plate) in enumerate(self._split_plates(seg_start, seg_end)):
+                if i == 0:
+                    reason = seg_reason
                 else:
-                    pieces.extend(self._split_long(start, end_page, end_before, heading))
+                    reason = "前のページまでの図版ページの連続が終わったため(本文の続き)" if not plate else ""
+                if plate:
+                    pieces.extend(self._plate_chunks(start.page, end_page, reason))
+                else:
+                    pieces.extend(self._split_long(start, end_page, end_before, heading, reason))
         pieces.sort(key=lambda c: (c.start.page, c.start.order if c.start.order is not None else -1))
         for i, c in enumerate(pieces, 1):
             c.index = i
             c.headings = self._headings_in(c)
-            c.figures = self._figures_in(c)
+            c.figures = self._figures_in(c, self.figures)
+            c.tables = self._figures_in(c, self.tables)
         return pieces
 
     # ---------- 1. 章・節で区切る ----------
-    def _segments(self) -> list[tuple[Pos, tuple[int, int | None], Heading | None]]:
+    def _segments(self) -> list[tuple[Pos, tuple[int, int | None], Heading | None, str]]:
         bounds = [h for h in self.all_headings if h.level <= self.cfg.section_level]
         starts: list[tuple[Pos, Heading | None]] = []
         if not bounds or not (bounds[0].global_page == self.first and not self._content_before(self.first, bounds[0].order)):
@@ -100,16 +118,29 @@ class Chunker:
 
         segments = []
         carry: tuple[Pos, Heading | None] | None = None  # 見出しだけで本文が無い区間は次に繋げる
+        merged: list[Heading] = []                        # carry に繋げた見出し(理由の表示用)
         for i, (pos, heading) in enumerate(starts):
             nxt = starts[i + 1][0] if i + 1 < len(starts) else None
             end = self._end_of(nxt)
             start, head = carry if carry else (pos, heading)
+            if carry and heading is not None:
+                merged.append(heading)
             if nxt is not None and self._only_headings(start, end, bounds):
                 carry = (start, head)
                 continue
             carry = None
-            segments.append((start, end, head))
+            segments.append((start, end, head, self._segment_reason(head, merged)))
+            merged = []
         return segments
+
+    def _segment_reason(self, head: Heading | None, merged: list[Heading]) -> str:
+        if head is None:
+            return "報告書の先頭(最初の区切りの見出しより前の部分)"
+        reason = f"区切りの階層(section_level={self.cfg.section_level})以内の{describe_heading(head)}"
+        if merged:
+            names = "」「".join(h.text for h in merged)
+            reason += f"。直後の見出し「{names}」との間に本文が無いため、まとめて1つのチャンクにした"
+        return reason
 
     def _end_of(self, nxt: Pos | None) -> tuple[int, int | None]:
         """次の区切りの手前まで。次の見出しの前に同じページの本文があれば、そのページも含める(重複)"""
@@ -185,21 +216,30 @@ class Chunker:
             result.append((s_pos, e, e_before, plate))
         return result
 
-    def _plate_chunks(self, s: int, e: int) -> list[Chunk]:
+    def _plate_chunks(self, s: int, e: int, reason: str) -> list[Chunk]:
         size = max(1, self.cfg.max_pages_per_chunk)
+        plate_reason = (f"図版ページが{e - s + 1}ページ続く(min_plate_run={self.cfg.min_plate_run}以上)ため、"
+                        "図版だけのチャンクにした")
         chunks = []
         for i, p in enumerate(range(s, e + 1, size)):
             heading = next((h for h in self.all_headings if h.global_page == p and h.level <= self.cfg.section_level), None)
             title = heading.text if heading else "図版"
             # 図版は本文の節に属さないことが多いので、上位の見出しは付けない(見出しがある場合はそれに従う)
             crumb = [] if heading is None else self._breadcrumb(Pos(p), heading.level)
-            chunks.append(Chunk(0, "plate", title, heading.level if heading else None, crumb,
-                                i > 0, Pos(p), min(p + size - 1, e), None))
+            chunk = Chunk(0, "plate", title, heading.level if heading else None, crumb,
+                          i > 0, Pos(p), min(p + size - 1, e), None)
+            if i == 0:
+                chunk.reason = f"{reason}。{plate_reason}" if reason else plate_reason
+            else:
+                chunk.reason = f"図版の連続が1チャンクの上限(max_pages_per_chunk={size}ページ)を超えるため分割: ページの境目で区切った"
+            chunks.append(chunk)
         return chunks
 
     # ---------- 3. 長い範囲を分割する ----------
-    def _split_long(self, start: Pos, end_page: int, end_before: int | None, heading: Heading | None) -> list[Chunk]:
+    def _split_long(self, start: Pos, end_page: int, end_before: int | None, heading: Heading | None,
+                    reason: str) -> list[Chunk]:
         size = max(1, self.cfg.max_pages_per_chunk)
+        over = f"範囲が1チャンクの上限(max_pages_per_chunk={size}ページ)を超えるため分割"
         out = []
         cur, cur_head, continued = start, (heading if heading and start == Pos(heading.global_page, heading.order) else None), False
         if cur_head is None and heading is not None:
@@ -212,12 +252,14 @@ class Chunker:
             if cands:
                 cut = cands[-1]
                 e_page, e_before = self._end_of(Pos(cut.global_page, cut.order))
-                out.append(self._section_chunk(cur, e_page, e_before, cur_head, continued, heading))
+                out.append(self._section_chunk(cur, e_page, e_before, cur_head, continued, heading, reason))
                 cur, cur_head, continued = Pos(cut.global_page, cut.order), cut, False
+                reason = f"{over}: {limit}ページまでにある最後の下位の{describe_heading(cut)}で区切った"
             else:
-                out.append(self._section_chunk(cur, limit, None, cur_head, continued, heading))
+                out.append(self._section_chunk(cur, limit, None, cur_head, continued, heading, reason))
                 cur, cur_head, continued = Pos(limit + 1), None, True
-        out.append(self._section_chunk(cur, end_page, end_before, cur_head, continued, heading))
+                reason = f"{over}: {cur.page - size}〜{limit}ページに下位の見出しが無いため、ページの境目で区切った"
+        out.append(self._section_chunk(cur, end_page, end_before, cur_head, continued, heading, reason))
         return out
 
     @staticmethod
@@ -230,17 +272,18 @@ class Chunker:
             return True
         return h.global_page == end_page and (end_before is None or h.order < end_before)
 
-    def _section_chunk(self, start, end_page, end_before, head, continued, section_head) -> Chunk:
+    def _section_chunk(self, start, end_page, end_before, head, continued, section_head, reason) -> Chunk:
         if head is not None:
             kind = "special" if head.style == "special" else "section"
             return Chunk(0, kind, head.text, head.level, self._breadcrumb(start, head.level),
-                         False, start, end_page, end_before)
+                         False, start, end_page, end_before, reason=reason)
         chain = self._ancestors(start)
         if section_head is None or not chain:
-            return Chunk(0, "front", "表紙など(最初の見出しより前)", None, [], False, start, end_page, end_before)
+            return Chunk(0, "front", "表紙など(最初の見出しより前)", None, [], False, start, end_page, end_before,
+                         reason=reason)
         # 途中から始まる範囲: 直前の最も下位の見出しの「続き」とする
         return Chunk(0, "section", f"{chain[-1].text}(続き)", chain[-1].level,
-                     [h.text for h in chain[:-1]], True, start, end_page, end_before)
+                     [h.text for h in chain[:-1]], True, start, end_page, end_before, reason=reason)
 
     def _ancestors(self, pos: Pos) -> list[Heading]:
         """その位置より前にある、上位から順の見出しの並び(例: [第3章 調査の成果, 第2節 遺物, 2.土器])"""
@@ -261,7 +304,7 @@ class Chunker:
         if not (c.start.page <= page_no <= c.end_page):
             return False
         page = self.pages[page_no]
-        if order is None and y is not None:  # 図は上端のy座標で、境界の行より後ろかを判断する
+        if order is None and y is not None:  # 図・表は上端のy座標で、境界の行より後ろかを判断する
             if page_no == c.start.page and c.start.order is not None:
                 sl = next((l for l in page.lines if l.order == c.start.order), None)
                 if sl and y < sl.y0:
@@ -281,8 +324,8 @@ class Chunker:
         keys = {(no, l.id) for no, l in self._lines_in(c.start, c.end_page, c.end_before)}
         return [h for h in self.all_headings if (h.global_page, h.line_id) in keys]
 
-    def _figures_in(self, c: Chunk) -> list[Figure]:
-        return [f for f in self.figures.figures if self._in_scope(c, f.global_page, y=f.block.y0)]
+    def _figures_in(self, c: Chunk, registry: FigureRegistry) -> list[Figure]:
+        return [f for f in registry.figures if self._in_scope(c, f.global_page, y=f.block.y0)]
 
     def scope_lines(self, c: Chunk) -> dict[int, list[int]]:
         """ページごとの、範囲内の行IDの一覧"""

@@ -23,6 +23,7 @@ from pathlib import Path
 import pypdfium2 as pdfium
 
 from .base import Step
+from .ort_setup import cuda_ready
 
 
 OCR_FORMAT = "capture_vlm.ocr/3"
@@ -47,7 +48,7 @@ class NdlOcrRunner(Step):
 
     # ---------- 準備 ----------
     def _build_command(self) -> list[str]:
-        """このプログラムと同じPython(venv)で ocr.py を実行する"""
+        """このプログラムと同じPython(venv)で ocr.py を実行する(onnxruntimeの準備をする起動用スクリプト経由)"""
         src = self.config.ndlocr_script.parent
         if not self.config.ndlocr_script.exists():
             raise FileNotFoundError(
@@ -59,7 +60,7 @@ class NdlOcrRunner(Step):
                 "このNDLOCR-LiteはPDFの直接入力に対応していません(1.3.0以降が必要です)。\n"
                 "  README の「NDLOCR-Liteのバージョンを変える」を参照してください。"
             )
-        return [sys.executable, str(self.config.ndlocr_script)]
+        return [sys.executable, str(Path(__file__).with_name("ndlocr_launcher.py")), str(self.config.ndlocr_script)]
 
     def _pending_pdfs(self) -> list[tuple[Path, int]]:
         """ページのJSONが1つでも欠けているPDFを (パス, ページ数) で返す"""
@@ -96,13 +97,9 @@ class NdlOcrRunner(Step):
         """cudaが指定されていても、onnxruntimeがGPUを使えない場合はcpuに切り替える"""
         if self.config.ocr_device != "cuda":
             return "cpu"
-        try:
-            import onnxruntime as ort
-            if "CUDAExecutionProvider" in ort.get_available_providers():
-                return "cuda"
-        except ImportError:
-            pass
-        self.log("[警告] onnxruntimeでCUDAが使えないためCPUで実行します(onnxruntime-gpuを確認してください)")
+        if cuda_ready():
+            return "cuda"
+        self.log("[警告] onnxruntimeでCUDAが使えないためCPUで実行します(onnxruntime-gpu と cuDNN 9 を確認してください)")
         return "cpu"
 
     # ---------- 実行 ----------
